@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Info, Upload, Zap } from "lucide-react";
+import { Info, Zap } from "lucide-react";
 import { useSafuPadSDK } from "@/lib/safupad-sdk";
 
 interface InstantLaunchModalProps {
@@ -26,13 +26,14 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
     name: "",
     symbol: "",
     description: "",
-    totalSupply: "1000000000",
     initialBuy: "0",
     twitter: "",
     telegram: "",
-    image: null as File | null,
+    imageUrl: "",
     infofiWallet: "",
   });
+
+  const TOTAL_SUPPLY = 1000000000; // 1 billion constant
 
   const { sdk, isInitializing, error: sdkError, connect } = useSafuPadSDK();
   const [submitting, setSubmitting] = useState(false);
@@ -46,10 +47,6 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
     // Basic validation
     if (!formData.name.trim() || !formData.symbol.trim() || !formData.description.trim()) {
       setSubmitError("Please fill in name, symbol, and description.");
-      return;
-    }
-    if (!formData.totalSupply || Number(formData.totalSupply) <= 0) {
-      setSubmitError("Total supply must be greater than 0.");
       return;
     }
     if (formData.initialBuy === "" || Number(formData.initialBuy) < 0) {
@@ -74,9 +71,9 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
       const params = {
         name: formData.name.trim(),
         symbol: formData.symbol.trim().toUpperCase(),
-        totalSupply: Number(formData.totalSupply),
+        totalSupply: TOTAL_SUPPLY,
         metadata: {
-          logoURI: "", // Optional: wire image upload later
+          logoURI: formData.imageUrl.trim(),
           description: formData.description.trim(),
           website: "",
           twitter: formData.twitter.trim(),
@@ -103,7 +100,7 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col justify-center">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-2xl flex items-center gap-2">
             <Zap className="w-6 h-6 text-primary" />
@@ -118,7 +115,7 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription>
-              No approval needed! Your token goes live instantly. 2% trading fee: 1% to you, 0.9% to InfoFi platform, 0.1% platform fee.
+              No approval needed! Your token goes live instantly. 2.1% trading fee: 1% to you, 1.0% to InfoFi platform, 0.1% platform fee.
             </AlertDescription>
           </Alert>
 
@@ -182,15 +179,13 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="totalSupply">Total Supply *</Label>
-            <Input
-              id="totalSupply"
-              type="number"
-              placeholder="1000000000"
-              value={formData.totalSupply}
-              onChange={(e) => setFormData({ ...formData, totalSupply: e.target.value })}
-              disabled={submitting}
-            />
+            <Label>Total Supply</Label>
+            <div className="bg-muted/50 border border-border rounded-lg p-3">
+              <p className="text-lg font-semibold">{TOTAL_SUPPLY.toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Fixed supply of 1 billion tokens
+              </p>
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -211,16 +206,18 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="image">Token Image</Label>
-            <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer">
-              <Upload className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
-                Click to upload or drag and drop
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                PNG, JPG up to 2MB
-              </p>
-            </div>
+            <Label htmlFor="imageUrl">Token Image URL</Label>
+            <Input
+              id="imageUrl"
+              type="url"
+              placeholder="https://example.com/token-image.png"
+              value={formData.imageUrl}
+              onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+              disabled={submitting}
+            />
+            <p className="text-xs text-muted-foreground">
+              Direct link to your token's image (PNG, JPG, GIF)
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -259,7 +256,7 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
           </div>
 
           <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-            <h4 className="font-semibold text-sm mb-3">Fee Structure (2% total)</h4>
+            <h4 className="font-semibold text-sm mb-3">Fee Structure (2.1% total)</h4>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Platform:</span>
               <span className="font-medium">0.1%</span>
@@ -270,7 +267,7 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">InfoFi (Platform):</span>
-              <span className="font-medium">0.9%</span>
+              <span className="font-medium">1.0%</span>
             </div>
           </div>
 
@@ -313,7 +310,7 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
             </div>
             <div className="text-sm space-y-1">
               <p><strong>Token:</strong> {formData.name || "---"} ({formData.symbol || "---"})</p>
-              <p><strong>Supply:</strong> {formData.totalSupply ? parseInt(formData.totalSupply).toLocaleString() : "---"}</p>
+              <p><strong>Supply:</strong> {TOTAL_SUPPLY.toLocaleString()}</p>
               <p><strong>Initial Buy:</strong> {formData.initialBuy} BNB</p>
               {formData.infofiWallet && (
                 <p><strong>InfoFi Wallet:</strong> {formData.infofiWallet}</p>

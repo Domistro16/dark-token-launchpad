@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Slider } from "@/components/ui/slider";
-import { Info, Upload } from "lucide-react";
+import { Info } from "lucide-react";
 
 interface ProjectRaiseModalProps {
   isOpen: boolean;
@@ -27,13 +27,14 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
     name: "",
     symbol: "",
     description: "",
-    totalSupply: "1000000000",
-    targetAmount: "250000",
+    targetAmount: "250",
     twitter: "",
     telegram: "",
     website: "",
-    image: null as File | null,
+    imageUrl: "",
     infofiWallet: "",
+    burnLP: false,
+    vestingDuration: 3, // months, minimum 3
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,24 +45,29 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
   const { useSafuPadSDK } = require("@/lib/safupad-sdk");
   const { sdk, isInitializing } = useSafuPadSDK();
 
+  const TOTAL_SUPPLY = 1000000000; // 1 billion constant
+
   const handleSubmit = async () => {
     setError(null);
     setSuccess(false);
     setTxHash(null);
 
     // Basic validation
-    if (!formData.name || !formData.symbol || !formData.totalSupply || !formData.targetAmount) {
-      setError("Please fill in all required fields (name, symbol, total supply, target amount).");
+    if (!formData.name || !formData.symbol || !formData.targetAmount) {
+      setError("Please fill in all required fields (name, symbol, target amount).");
       return;
     }
-    const totalSupplyNum = Number(formData.totalSupply);
-    if (!Number.isFinite(totalSupplyNum) || totalSupplyNum <= 0) {
-      setError("Total supply must be a positive number.");
+    if (!formData.infofiWallet || formData.infofiWallet.trim() === "") {
+      setError("InfoFi wallet address is required.");
       return;
     }
-    const targetUSD = Number(formData.targetAmount);
-    if (!Number.isFinite(targetUSD) || targetUSD < 50000 || targetUSD > 500000) {
-      setError("Target amount must be between $50,000 and $500,000.");
+    const targetBNB = Number(formData.targetAmount);
+    if (!Number.isFinite(targetBNB) || targetBNB < 50 || targetBNB > 500) {
+      setError("Target amount must be between 50 BNB and 500 BNB.");
+      return;
+    }
+    if (formData.vestingDuration < 3 || formData.vestingDuration > 6) {
+      setError("Vesting duration must be between 3 and 6 months.");
       return;
     }
 
@@ -77,7 +83,7 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
       const founder = await sdk.getAddress();
 
       const metadata = {
-        logoURI: "",
+        logoURI: formData.imageUrl || "",
         description: formData.description || `${formData.name} (${formData.symbol}) project raise`,
         website: formData.website || "",
         twitter: formData.twitter || "",
@@ -88,21 +94,19 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
       const params = {
         name: formData.name.trim(),
         symbol: formData.symbol.trim().toUpperCase(),
-        totalSupply: totalSupplyNum,
-        raiseTargetUSD: String(targetUSD),
-        raiseMaxUSD: String(targetUSD), // keep max equal to target for now
-        vestingDuration: 180, // 6 months per product spec
+        totalSupply: TOTAL_SUPPLY,
+        raiseTargetUSD: String(targetBNB),
+        raiseMaxUSD: String(targetBNB),
+        vestingDuration: formData.vestingDuration * 30,
         metadata,
-        projectInfoFiWallet: formData.infofiWallet.trim() || founder, // prefer provided wallet, fallback to founder
-        burnLP: true,
+        projectInfoFiWallet: formData.infofiWallet.trim(),
+        burnLP: formData.burnLP,
       };
 
       const tx = await sdk.launchpad.createLaunch(params);
       setTxHash(tx.hash);
       await tx.wait();
       setSuccess(true);
-      // Optionally close after success
-      // onClose();
     } catch (e: any) {
       const message = e?.message || "Failed to create project raise.";
       setError(message);
@@ -190,28 +194,28 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="totalSupply">Total Supply *</Label>
-              <Input
-                id="totalSupply"
-                type="number"
-                placeholder="1000000000"
-                value={formData.totalSupply}
-                onChange={(e) => setFormData({ ...formData, totalSupply: e.target.value })}
-                disabled={submitting || isInitializing}
-              />
+              <Label>Total Supply</Label>
+              <div className="bg-muted/50 border border-border rounded-lg p-3">
+                <p className="text-lg font-semibold">{TOTAL_SUPPLY.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Fixed supply of 1 billion tokens
+                </p>
+              </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="image">Token Image</Label>
-              <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
-                <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  Click to upload or drag and drop
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  PNG, JPG up to 2MB
-                </p>
-              </div>
+              <Label htmlFor="imageUrl">Token Image URL</Label>
+              <Input
+                id="imageUrl"
+                type="url"
+                placeholder="https://example.com/token-image.png"
+                value={formData.imageUrl}
+                onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+                disabled={submitting || isInitializing}
+              />
+              <p className="text-xs text-muted-foreground">
+                Direct link to your token's image (PNG, JPG, GIF)
+              </p>
             </div>
 
             <Button onClick={() => setStep(2)} className="w-full controller-btn" disabled={submitting || isInitializing}>
@@ -225,17 +229,17 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>
-                Set your fundraising target between $50,000 and $500,000
+                Set your fundraising target between 50 BNB and 500 BNB
               </AlertDescription>
             </Alert>
 
             <div className="space-y-2">
-              <Label htmlFor="targetAmount">Target Amount (USD) *</Label>
+              <Label htmlFor="targetAmount">Target Amount (BNB) *</Label>
               <Input
                 id="targetAmount"
                 type="number"
-                min="50000"
-                max="500000"
+                min="50"
+                max="500"
                 value={formData.targetAmount}
                 onChange={(e) => setFormData({ ...formData, targetAmount: e.target.value })}
                 disabled={submitting || isInitializing}
@@ -243,18 +247,63 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
               <Slider
                 value={[parseInt(formData.targetAmount)]}
                 onValueChange={(value) => setFormData({ ...formData, targetAmount: value[0].toString() })}
-                min={50000}
-                max={500000}
-                step={10000}
+                min={50}
+                max={500}
+                step={10}
                 className="mt-2"
               />
               <p className="text-xs text-muted-foreground">
-                ${parseInt(formData.targetAmount).toLocaleString()}
+                {parseInt(formData.targetAmount).toLocaleString()} BNB
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="infofiWallet">InfoFi Wallet (optional)</Label>
+              <Label htmlFor="vestingDuration">
+                Vesting Duration (Project Go-Live Date) *
+              </Label>
+              <Input
+                id="vestingDuration"
+                type="number"
+                min="3"
+                max="6"
+                value={formData.vestingDuration}
+                onChange={(e) => setFormData({ ...formData, vestingDuration: Number(e.target.value) })}
+                disabled={submitting || isInitializing}
+              />
+              <Slider
+                value={[formData.vestingDuration]}
+                onValueChange={(value) => setFormData({ ...formData, vestingDuration: value[0] })}
+                min={3}
+                max={6}
+                step={1}
+                className="mt-2"
+              />
+              <p className="text-xs text-muted-foreground">
+                {formData.vestingDuration} month{formData.vestingDuration !== 1 ? 's' : ''} - Your project will go live at the end of the vesting period
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="burnLP"
+                  checked={formData.burnLP}
+                  onChange={(e) => setFormData({ ...formData, burnLP: e.target.checked })}
+                  disabled={submitting || isInitializing}
+                  className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                />
+                <Label htmlFor="burnLP" className="cursor-pointer">
+                  Burn LP tokens after launch
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground ml-6">
+                Burning LP tokens permanently locks liquidity, preventing removal and building trust with investors
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="infofiWallet">InfoFi Wallet Address *</Label>
               <Input
                 id="infofiWallet"
                 placeholder="0x..."
@@ -262,6 +311,9 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
                 onChange={(e) => setFormData({ ...formData, infofiWallet: e.target.value })}
                 disabled={submitting || isInitializing}
               />
+              <p className="text-xs text-muted-foreground">
+                Required - This wallet will receive InfoFi platform fees
+              </p>
             </div>
 
             <div className="bg-muted/50 rounded-lg p-4 space-y-2">
@@ -272,7 +324,7 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Liquidity Pool:</span>
-                <span className="font-medium">10% (capped at $100k)</span>
+                <span className="font-medium">10% (capped at 100 BNB)</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Public Sale:</span>
@@ -281,18 +333,18 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
             </div>
 
             <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-              <h4 className="font-semibold text-sm mb-3">Fee Structure (2% total)</h4>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Platform:</span>
-                <span className="font-medium">0.1%</span>
-              </div>
+              <h4 className="font-semibold text-sm mb-3">Fee Structure (1.9% total)</h4>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Creator (You):</span>
                 <span className="font-medium">1.0%</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">InfoFi (Platform):</span>
-                <span className="font-medium">0.9%</span>
+                <span className="text-muted-foreground">InfoFi (Project):</span>
+                <span className="font-medium">0.6%</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Liquidity:</span>
+                <span className="font-medium">0.3%</span>
               </div>
             </div>
 
@@ -353,11 +405,11 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
               <h4 className="font-semibold text-sm">Review Your Launch</h4>
               <div className="text-sm space-y-1">
                 <p><strong>Token:</strong> {formData.name} ({formData.symbol})</p>
-                <p><strong>Supply:</strong> {parseInt(formData.totalSupply).toLocaleString()}</p>
-                <p><strong>Target:</strong> ${parseInt(formData.targetAmount).toLocaleString()}</p>
-                {formData.infofiWallet && (
-                  <p><strong>InfoFi Wallet:</strong> {formData.infofiWallet}</p>
-                )}
+                <p><strong>Supply:</strong> {TOTAL_SUPPLY.toLocaleString()}</p>
+                <p><strong>Target:</strong> {parseInt(formData.targetAmount).toLocaleString()} BNB</p>
+                <p><strong>Vesting Duration:</strong> {formData.vestingDuration} month{formData.vestingDuration !== 1 ? 's' : ''}</p>
+                <p><strong>Burn LP:</strong> {formData.burnLP ? 'Yes' : 'No'}</p>
+                <p><strong>InfoFi Wallet:</strong> {formData.infofiWallet || 'Not set'}</p>
                 <p><strong>Status:</strong> {success ? "Submitted" : "Awaiting approval"}</p>
                 {txHash && (
                   <p>

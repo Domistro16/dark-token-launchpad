@@ -17,7 +17,6 @@ import Link from "next/link";
 import { useSafuPadSDK } from "@/lib/safupad-sdk";
 import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
-import { ethers } from "ethers";
 
 interface TokenCardProps {
   token: Token;
@@ -199,15 +198,15 @@ export function TokenCard({ token, onContribute }: TokenCardProps) {
           </div>
         )}
 
-        {/* Additional Stats */}
+        {/* Additional Stats - Using SDK data passed from parent */}
         <div className="flex items-center justify-between text-xs pt-2 border-t border-border">
           <div className="flex items-center gap-1">
             <Users className="w-3 h-3 text-muted-foreground" />
-            <span className="text-muted-foreground">{token.holders} holders</span>
+            <span className="text-muted-foreground">{token.holders || 0} holders</span>
           </div>
           <div className="flex items-center gap-1">
             <TrendingUp className="w-3 h-3 text-muted-foreground" />
-            <span className="text-muted-foreground">{token.transactions} txns</span>
+            <span className="text-muted-foreground">{token.transactions || 0} txns</span>
           </div>
         </div>
       </div>

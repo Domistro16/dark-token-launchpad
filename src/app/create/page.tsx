@@ -40,14 +40,14 @@ export default function CreatePage() {
                 </div>
                 <h2 className="text-2xl font-bold mb-2">Project Raise</h2>
                 <p className="text-muted-foreground">
-                  Raise $50k-$500k over 24 hours with structured vesting and liquidity management
+                  Raise 50-500 BNB over 24 hours with structured vesting and liquidity management
                 </p>
               </div>
 
               <div className="space-y-3 mb-6">
                 <div className="flex items-start gap-2">
                   <Check className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
-                  <span className="text-sm">24-hour raise window ($50k-$500k target)</span>
+                  <span className="text-sm">24-hour raise window (50-500 BNB target)</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <Check className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
@@ -55,11 +55,11 @@ export default function CreatePage() {
                 </div>
                 <div className="flex items-start gap-2">
                   <Check className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
-                  <span className="text-sm">10% liquidity pool (capped at $100k)</span>
+                  <span className="text-sm">10% liquidity pool (capped at 100 BNB)</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <Check className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
-                  <span className="text-sm">2% trading fee (0.1% platform, 1.0% creator, 0.9% InfoFi)</span>
+                  <span className="text-sm">1.9% trading fee (1.0% creator, 0.6% InfoFi, 0.3% liquidity)</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <Check className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
@@ -103,7 +103,7 @@ export default function CreatePage() {
                 </div>
                 <div className="flex items-start gap-2">
                   <Check className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
-                  <span className="text-sm">2% trading fee (0.1% platform, 1.0% creator, 0.9% InfoFi)</span>
+                  <span className="text-sm">2.1% trading fee (0.1% platform, 1.0% creator, 1.0% InfoFi)</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <Check className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
@@ -153,7 +153,7 @@ export default function CreatePage() {
                   </tr>
                   <tr className="border-b border-border">
                     <td className="py-3 pr-4">Fundraising</td>
-                    <td className="text-center py-3 px-4 text-primary font-medium">$50k-$500k</td>
+                    <td className="text-center py-3 px-4 text-primary font-medium">50-500 BNB</td>
                     <td className="text-center py-3 px-4">No fundraising</td>
                   </tr>
                   <tr>

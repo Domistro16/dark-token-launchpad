@@ -14,7 +14,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useSafuPadSDK } from "@/lib/safupad-sdk";
 import type { Token } from "@/types/token";
 import { ethers } from "ethers";
-import { calculate24hVolume } from "@/lib/volumeTracker";
 
 export const abi = [{
       "inputs": [
@@ -253,13 +252,39 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
           ? new Date(Number(launchInfo.raiseDeadline) * 1000)
           : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-        // Calculate 24h volume
+        // Fetch volume data using SDK methods
         let volume24h = 0;
+        let totalVolumeBNB = 0;
+        let recentTradesCount = 0;
+        let holderCount = 0;
+
         try {
-          const volumeData = await calculate24hVolume(sdk, id);
-          volume24h = volumeData.volumeUSD;
+          // Get 24h volume
+          const volume24hData = await sdk.bondingDex.get24hVolume(id);
+          const volume24hBNB = Number(ethers.formatEther(volume24hData.totalVolumeBNB));
+          volume24h = await sdk.priceOracle.bnbToUSD(volume24hBNB);
+          
+          // Get total volume
+          const totalVolumeData = await sdk.bondingDex.getTotalVolume(id);
+          totalVolumeBNB = Number(ethers.formatEther(totalVolumeData.totalVolumeBNB));
+          
+          // Get recent trades
+          const recentTrades = await sdk.bondingDex.getRecentTrades(id);
+          recentTradesCount = recentTrades.length;
+          
+          // Get holder count
+          holderCount = await sdk.bondingDex.getEstimatedHolderCount(id);
+          
+          console.log(`Volume data for ${tokenName}:`, {
+            volume24h,
+            totalVolumeBNB,
+            recentTradesCount,
+            holderCount,
+            volume24hData,
+            totalVolumeData
+          });
         } catch (error) {
-          console.warn(`Could not fetch volume for ${id}:`, error);
+          console.warn(`Could not fetch volume/holder data for ${id}:`, error);
         }
 
         if (cancelled) return;
@@ -302,7 +327,7 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
               vestingMonths: 6,
               liquidityAllocation: 10,
               liquidityCap: 100000,
-              graduationThreshold: 500000,
+              graduationThreshold: 15,
               tradingFee: { platform: 0.1, academy: 0.3, infofiPlatform: 0.6 },
             },
             raisedAmount: totalRaisedUSD,
@@ -311,6 +336,7 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
             endTime: raiseDeadline,
             vestingSchedule: { totalAmount: 0, releasedAmount: 0, schedule: [] },
             approved: true,
+            graduationProgress,
           } : undefined,
 
           // Instant Launch
@@ -341,9 +367,9 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
           telegram: tokenMeta.telegram,
           website: tokenMeta.website,
 
-          // Stats
-          holders: 0,
-          transactions: 0,
+          // Stats - Updated with SDK data
+          holders: holderCount,
+          transactions: recentTradesCount,
         } as Token;
 
         setToken(tokenData);

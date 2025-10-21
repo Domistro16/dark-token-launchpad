@@ -12,7 +12,6 @@ import type { Token } from "@/types/token";
 import { ethers } from "ethers";
 import { ContributeModal } from "@/components/ContributeModal";
 import { TokensLoadingAnimation } from "@/components/TokensLoadingAnimation";
-import { calculate24hVolume } from "@/lib/volumeTracker";
 
 export default function Home() {
   const [search, setSearch] = useState("");
@@ -122,13 +121,39 @@ export default function Home() {
                 ? new Date(Number(launchInfo.raiseDeadline) * 1000)
                 : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-              // D. Calculate 24h volume
+              // D. Fetch volume data using new SDK methods
               let volume24h = 0;
+              let totalVolumeBNB = 0;
+              let recentTradesCount = 0;
+              let holderCount = 0;
+
               try {
-                const volumeData = await calculate24hVolume(sdk, addr);
-                volume24h = volumeData.volumeUSD;
+                // Get 24h volume
+                const volume24hData = await sdk.bondingDex.get24hVolume(addr);
+                const volume24hBNB = Number(ethers.formatEther(volume24hData.totalVolumeBNB));
+                volume24h = await sdk.priceOracle.bnbToUSD(volume24hBNB);
+                
+                // Get total volume
+                const totalVolumeData = await sdk.bondingDex.getTotalVolume(addr);
+                totalVolumeBNB = Number(ethers.formatEther(totalVolumeData.totalVolumeBNB));
+                
+                // Get recent trades
+                const recentTrades = await sdk.bondingDex.getRecentTrades(addr);
+                recentTradesCount = recentTrades.length;
+                
+                // Get holder count
+                holderCount = await sdk.bondingDex.getEstimatedHolderCount(addr);
+                
+                console.log(`Volume data for ${tokenName}:`, {
+                  volume24h,
+                  totalVolumeBNB,
+                  recentTradesCount,
+                  holderCount,
+                  volume24hData,
+                  totalVolumeData
+                });
               } catch (error) {
-                console.warn(`Could not fetch volume for ${addr}:`, error);
+                console.warn(`Could not fetch volume/holder data for ${addr}:`, error);
               }
 
               const token: Token = {
@@ -210,9 +235,9 @@ export default function Home() {
                 telegram: tokenMeta.telegram,
                 website: tokenMeta.website,
 
-                // Stats
-                holders: 0,
-                transactions: 0,
+                // Stats - Updated with SDK data
+                holders: holderCount,
+                transactions: recentTradesCount,
                 
                 // Keep index for sorting
                 __index: idx,
@@ -333,7 +358,7 @@ export default function Home() {
         <div className="container mx-auto px-4 py-14 sm:py-16 relative">
           <div className="max-w-3xl mx-auto text-center space-y-5">
             <h1 className="text-3xl sm:text-5xl md:text-6xl font-black tracking-wide md:tracking-wider glow-text break-words">
-              Welcome to Safupad
+              ICM 2.0 on BNB Chain
             </h1>
             
             <div className="flex flex-wrap gap-4 justify-center pt-4">
