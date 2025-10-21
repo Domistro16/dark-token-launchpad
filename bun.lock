@@ -39,7 +39,7 @@
         "@rainbow-me/rainbowkit": "^2.2.9",
         "@react-three/drei": "^10.4.4",
         "@react-three/fiber": "^9.0.0-alpha.8",
-        "@safupad/sdk": "1.0.0",
+        "@safupad/sdk": "1.0.4",
         "@tabler/icons-react": "^3.35.0",
         "@tailwindcss/typography": "^0.5.19",
         "@tanstack/react-query": "^5.90.5",
@@ -643,7 +643,7 @@
 
     "@safe-global/safe-gateway-typescript-sdk": ["@safe-global/safe-gateway-typescript-sdk@3.23.1", "", {}, "sha512-6ORQfwtEJYpalCeVO21L4XXGSdbEMfyp2hEv6cP82afKXSwvse6d3sdelgaPWUxHIsFRkWvHDdzh8IyyKHZKxw=="],
 
-    "@safupad/sdk": ["@safupad/sdk@1.0.0", "", { "dependencies": { "ethers": "^6.10.0" } }, "sha512-G163GheabelkyTRAdzUhP3S4OSU/Wo4FV80CRQco/Bl0tmqY+qbdGMqkeKLAlw52WoL4OGJoVsd9yMLLwxWWkg=="],
+    "@safupad/sdk": ["@safupad/sdk@1.0.4", "", { "dependencies": { "ethers": "^6.0.0" } }, "sha512-ijX2HgxiKTcv/Auhj0XAeoF4lMdKW51ABpeVsQInRCY5ctyiqalqPqkR6NFC7HU7Z00i69r+Gao8C65+fjsCQg=="],
 
     "@scure/base": ["@scure/base@1.2.6", "", {}, "sha512-g/nm5FgUa//MCj1gV09zTJTaM6KBAHqLN907YVQqf7zC49+DcO4B1so4ZX07Ef10Twr6nuqYEH9GEggFXA4Fmg=="],
 

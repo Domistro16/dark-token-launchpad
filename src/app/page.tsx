@@ -9,240 +9,273 @@ import { useEffect, useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { useSafuPadSDK } from "@/lib/safupad-sdk";
 import type { Token } from "@/types/token";
+import { ethers } from "ethers";
+import { ContributeModal } from "@/components/ContributeModal";
+import { TokensLoadingAnimation } from "@/components/TokensLoadingAnimation";
+import { calculate24hVolume } from "@/lib/volumeTracker";
 
 export default function Home() {
   const [search, setSearch] = useState("");
   const { sdk } = useSafuPadSDK();
   const [liveTokens, setLiveTokens] = useState<Token[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<"newest" | "marketCap" | "progress" | "endingSoon">("newest");
   const [filterBy, setFilterBy] = useState<
     "all" | "project" | "instant" | "activeRaises" | "trading" | "graduated"
   >("all");
+  const [contributeToken, setContributeToken] = useState<Token | null>(null);
+
+  const handleContribute = (token: Token) => {
+    console.log('handleContribute called with token:', token.id, token.name);
+    setContributeToken(token);
+  };
 
   useEffect(() => {
     let cancelled = false;
-    let interval: NodeJS.Timer | null = null;
 
     const load = async () => {
-      if (!sdk) return;
+      if (!sdk) {
+        setLoading(true);
+        return;
+      }
+      console.log('b')
       setLoading(true);
       setLoadError(null);
+      
       try {
-        // Step 1: Get all token addresses
-        const launches: any[] =
-          (await (sdk as any).launchpadManager?.getAllLaunches?.()) ??
-          (await (sdk as any).launchpad?.getAllLaunches?.());
-
-        const addresses: string[] = (launches || [])
-          .map((l: any) => (typeof l === "string" ? l : l?.tokenAddress || l?.address))
-          .filter(Boolean);
+        // Step 1: Get all token addresses - Use correct SDK method
+        const addresses = await sdk.launchpad.getAllLaunches();
+        console.log(addresses)
         if (cancelled) return;
 
         // Step 2: For each token address, fetch details
         const items: Token[] = await Promise.all(
           addresses.map(async (addr: string, idx: number): Promise<Token> => {
-            // A. Token Details
-            const tokenInfo: any = await (sdk).tokenFactory?.getTokenInfo?.(addr)
-              .catch(() => null)
-              .then(async (t: any) => {
-                if (!t && (sdk as any).getTokenInfo) {
-                  return await (sdk as any).getTokenInfo(addr).catch(() => null);
-                }
-                return t;
-              });
-            const tokenMeta: any = tokenInfo?.metadata ? await tokenInfo.metadata.catch?.(() => null) ?? tokenInfo.metadata : null;
-            const tokenName: string = tokenInfo?.name || tokenInfo?.token?.name || "";
-            const tokenSymbol: string = tokenInfo?.symbol || tokenInfo?.token?.symbol || "";
-            const logoURI: string = tokenMeta?.logo || tokenInfo?.image ||
-              "https://images.unsplash.com/photo-1614064641938-3bbee52942c1?w=400&h=400&fit=crop";
+            try {
+              // A. Token Details - Use correct SDK method
+              const tokenInfo = await sdk.tokenFactory.getTokenInfo(addr);
+              
+              // ✅ FIX: metadata is already an object, not a promise
+              const tokenMeta = tokenInfo.metadata;
+              console.log(tokenInfo)
+              // ✅ FIX: Never show address as name
+              const tokenName = tokenInfo.name || "Unknown Token";
+              const tokenSymbol = tokenInfo.symbol || "???";
+              
+              // ✅ FIX: Use correct field name 'logoURI' not 'logo'
+              const logoURI = tokenMeta.logoURI || 
+                "https://images.unsplash.com/photo-1614064641938-3bbee52942c1?w=400&h=400&fit=crop";
 
-            // B. Launch Information (with USD)
-            const launchInfo: any =
-              (await (sdk as any).launchpadManager?.getLaunchInfoWithUSD?.(addr).catch(() => null)) ??
-              (await (sdk as any).launchpad?.getLaunchInfoWithUSD?.(addr).catch(() => null)) ??
-              null;
-            const fallbackLaunch: any =
-              launchInfo ??
-              (await (sdk as any).launchpadManager?.getLaunchInfo?.(addr).catch(() => null)) ??
-              (await (sdk as any).launchpad?.getLaunchInfo?.(addr).catch(() => null));
+              // B. Launch Information - Use correct SDK method
+              const launchInfo = await sdk.launchpad.getLaunchInfoWithUSD(addr);
 
-            // C. Market/Pool Information
-            const poolInfo: any = await ((sdk).bondingDex.getPoolInfo(addr)
-              .catch(() => null) ?? null);
-            const poolFallback: any = poolInfo ?? (await (sdk as any).bonding?.getPoolInfo(addr).catch(() => null));
-            const pool = poolInfo ?? poolFallback ?? null;
+              // C. Pool Information - Use correct SDK method
+              const poolInfo = await sdk.bondingDex.getPoolInfo(addr);
+              
+              // ✅ Get creator fee information using sdk.bonding.getCreatorFeeInfo()
+              let creatorFeeInfo = null;
+              try {
+                creatorFeeInfo = await sdk.bonding.getCreatorFeeInfo(addr);
+                console.log(`Creator fee info for ${tokenInfo.name}:`, creatorFeeInfo);
+              } catch (err) {
+                console.warn(`Could not fetch creator fee info for ${addr}:`, err);
+              }
+              
+              console.log(`Pool info for ${tokenInfo.name}:`, poolInfo);
 
-            // Normalize launchType (can come as string or number). 0=PROJECT_RAISE, 1=INSTANT_LAUNCH
-            const rawLaunchType = (fallbackLaunch as any)?.launchType;
-            const launchTypeNum: number | undefined =
-              rawLaunchType === undefined || rawLaunchType === null
-                ? undefined
-                : typeof rawLaunchType === "string"
-                ? (isNaN(parseInt(rawLaunchType, 10)) ? undefined : parseInt(rawLaunchType, 10))
-                : Number(rawLaunchType);
+              // Parse launchType (0 = PROJECT-RAISE, 1 = INSTANT-LAUNCH)
+              const launchTypeNum = Number(launchInfo.launchType);
+              const isProjectRaise = launchTypeNum === 0;
 
-            // Infer project raise robustly with precedence:
-            // 1) launchType === 0 => project
-            // 2) launchType === 1 => instant
-            // 3) If missing/ambiguous: presence of raise fields => project
-            // 4) Lastly: if still unknown, no pool => project, else instant
-            const hasRaiseFields = !!(
-              (fallbackLaunch && (
-                fallbackLaunch.raiseMaxUSD !== undefined ||
-                fallbackLaunch.totalRaisedUSD !== undefined ||
-                fallbackLaunch.raiseDeadline !== undefined ||
-                fallbackLaunch.targetAmount !== undefined ||
-                fallbackLaunch.raisedAmount !== undefined
-              ))
-            );
-            const isProjectRaise =
-              launchTypeNum === 0 ||
-              (launchTypeNum === 1 ? false : hasRaiseFields) ||
-              (launchTypeNum === undefined && !pool);
+              // Parse numeric values (handle BigNumber if needed)
+            // ✅ CORRECT: Convert BigNumbers from wei (18 decimals) to regular numbers
+              const totalRaisedUSD = Number(ethers.formatEther(launchInfo.totalRaisedUSD));
+              const raiseMaxUSD = Number(ethers.formatEther(launchInfo.raiseMaxUSD));
+              const marketCapUSD = Number(ethers.formatEther(poolInfo.marketCapUSD));
+              const currentPrice = Number(ethers.formatEther(poolInfo.currentPrice));
+              const graduationProgress = Number(poolInfo.graduationProgress);
+              const priceMultiplier = Number(poolInfo.priceMultiplier);
+              const raiseCompleted = Boolean(launchInfo.raiseCompleted);
+              const graduated = Boolean(poolInfo.graduated);
+              
+              // Parse creator fee info if available
+              const accumulatedFees = creatorFeeInfo 
+                ? Number(ethers.formatEther(creatorFeeInfo.accumulatedFees))
+                : 0;
+              const lastClaimTime = creatorFeeInfo?.lastClaimTime 
+                ? new Date(Number(creatorFeeInfo.lastClaimTime) * 1000)
+                : null;
+              const graduationMarketCap = creatorFeeInfo
+                ? Number(ethers.formatEther(creatorFeeInfo.graduationMarketCap))
+                : 0;
+              const currentMarketCapFromFee = creatorFeeInfo
+                ? Number(ethers.formatEther(creatorFeeInfo.currentMarketCap))
+                : marketCapUSD;
+              const bnbInPool = creatorFeeInfo
+                ? Number(ethers.formatEther(creatorFeeInfo.bnbInPool))
+                : Number(poolInfo.bnbReserve);
+              const canClaim = creatorFeeInfo?.canClaim ?? false;
 
-            // Derived common fields
-            const currentPrice = Number(pool?.currentPrice ?? pool?.price ?? 0);
-            const marketCapUSD = Number(pool?.marketCapUSD ?? pool?.marketCap ?? 0);
-            const priceMultiplier = Number(pool?.priceMultiplier ?? 0);
-            const graduationProgress = Number(pool?.graduationProgress ?? 0);
-            const graduated = Boolean(pool?.graduated ?? false);
+              // Parse deadline
+              const raiseDeadline = launchInfo.raiseDeadline
+                ? new Date(Number(launchInfo.raiseDeadline) * 1000)
+                : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-            // Project raise specifics
-            const totalRaisedUSD = Number(fallbackLaunch?.totalRaisedUSD ?? fallbackLaunch?.raisedAmount ?? 0);
-            const raiseMaxUSD = Number(fallbackLaunch?.raiseMaxUSD ?? fallbackLaunch?.targetAmount ?? 0);
-            const raiseDeadline = fallbackLaunch?.raiseDeadline
-              ? new Date(Number(fallbackLaunch.raiseDeadline))
-              : fallbackLaunch?.endTime
-              ? new Date(Number(fallbackLaunch.endTime))
-              : undefined;
-            const raiseCompleted = Boolean(fallbackLaunch?.raiseCompleted ?? false);
+              // D. Calculate 24h volume
+              let volume24h = 0;
+              try {
+                const volumeData = await calculate24hVolume(sdk, addr);
+                volume24h = volumeData.volumeUSD;
+              } catch (error) {
+                console.warn(`Could not fetch volume for ${addr}:`, error);
+              }
 
-            const token: Token = {
-              id: addr,
-              name: tokenName || addr, // ensure name is not the address only if missing
-              symbol: tokenSymbol || addr.slice(0, 4).toUpperCase(),
-              description: tokenMeta?.description || tokenInfo?.description || "Launched token on SafuPad",
-              image: logoURI,
-              contractAddress: addr,
-              creatorAddress:
-                tokenInfo?.creator || tokenInfo?.owner || "0x0000000000000000000000000000000000000000",
-              launchType: isProjectRaise ? "project-raise" : "instant-launch",
-              status: ((): Token["status"] => {
-                if (isProjectRaise) {
-                  if (!raiseCompleted) return "active"; // Raising
-                  if (raiseCompleted && !graduated) return "active"; // Trading after raise
-                  return "completed"; // Graduated
-                }
-                return graduated ? "completed" : "active";
-              })(),
-              createdAt: tokenInfo?.createdAt ? new Date(Number(tokenInfo.createdAt)) : new Date(),
+              const token: Token = {
+                id: addr,
+                name: tokenName, // ✅ Correct: never shows address
+                symbol: tokenSymbol,
+                description: tokenMeta.description || "Launched token on SafuPad",
+                image: logoURI,
+                contractAddress: addr,
+                creatorAddress: launchInfo.founder,
+                
+                launchType: isProjectRaise ? "project-raise" : "instant-launch",
+                
+                status: ((): Token["status"] => {
+                  if (graduated) return "completed";
+                  if (isProjectRaise && !raiseCompleted) return "active"; // Raising
+                  return "active"; // Trading
+                })(),
+                
+                createdAt: new Date(),
 
-              // Financial
-              totalSupply: Number(tokenInfo?.totalSupply ?? 0),
-              currentPrice,
-              marketCap: marketCapUSD,
-              liquidityPool: Number(pool?.bnbReserve ?? pool?.liquidity ?? 0),
-              volume24h: Number(pool?.volume24h ?? 0),
-              priceChange24h: Number(pool?.priceChange24h ?? 0),
+                // Financial
+                totalSupply: Number(tokenInfo.totalSupply),
+                currentPrice,
+                marketCap: marketCapUSD,
+                liquidityPool: Number(poolInfo.bnbReserve),
+                volume24h,
+                priceChange24h: 0,
 
-              // Project Raise
-              projectRaise: isProjectRaise
-                ? {
-                    config: {
-                      type: "project-raise",
-                      targetAmount: raiseMaxUSD || 0,
-                      raiseWindow: 24 * 60 * 60 * 1000,
-                      ownerAllocation: 20,
-                      immediateUnlock: 10,
-                      vestingMonths: 6,
-                      liquidityAllocation: 10,
-                      liquidityCap: 100000,
-                      graduationThreshold: 500000,
-                      tradingFee: { platform: 0.1, academy: 0.3, infofiPlatform: 0.6 },
-                    },
-                    raisedAmount: totalRaisedUSD,
+                // Project Raise
+                projectRaise: isProjectRaise ? {
+                  config: {
+                    type: "project-raise",
                     targetAmount: raiseMaxUSD || 0,
-                    startTime: new Date(Date.now() - 60_000),
-                    endTime: raiseDeadline ?? new Date(Date.now() + 24 * 60 * 60 * 1000),
-                    vestingSchedule: { totalAmount: 0, releasedAmount: 0, schedule: [] },
-                    approved: true,
-                  }
-                : undefined,
+                    raiseWindow: 24 * 60 * 60 * 1000,
+                    ownerAllocation: 20,
+                    immediateUnlock: 10,
+                    vestingMonths: 6,
+                    liquidityAllocation: 10,
+                    liquidityCap: 100000,
+                    graduationThreshold: 500000,
+                    tradingFee: { platform: 0.1, liquidity: 0.3, infofiPlatform: 0.6 },
+                  },
+                  raisedAmount: totalRaisedUSD,
+                  targetAmount: raiseMaxUSD || 0,
+                  startTime: new Date(Date.now() - 60_000),
+                  endTime: raiseDeadline,
+                  vestingSchedule: { totalAmount: 0, releasedAmount: 0, schedule: [] },
+                  approved: true,
+                } : undefined,
 
-              // Instant Launch
-              instantLaunch: !isProjectRaise
-                ? {
-                    config: {
-                      type: "instant-launch",
-                      tradingFee: { platform: 0.1, creator: 1.0, infofiPlatform: 0.9 },
-                      graduationThreshold: 15,
-                      claimCooldown: 86_400_000,
-                      marketCapRequirement: true,
-                      accrualPeriod: 604_800_000,
-                    },
-                    cumulativeBuys: Number(pool?.bnbReserve ?? 0),
-                    creatorFees: Number(pool?.creatorFees ?? 0),
-                    lastClaimTime: pool?.lastClaimTime ? new Date(Number(pool.lastClaimTime)) : null,
-                    claimableAmount: Number(pool?.claimableAmount ?? 0),
-                    // extra fields used by card
-                    graduationProgress,
-                    priceMultiplier,
-                  } as any
-                : undefined,
+                // Instant Launch
+                instantLaunch: !isProjectRaise ? {
+                  config: {
+                    type: "instant-launch",
+                    tradingFee: { platform: 0.1, creator: 1.0, infofiPlatform: 0.9 },
+                    graduationThreshold: 15,
+                    claimCooldown: 86_400_000,
+                    marketCapRequirement: true,
+                    accrualPeriod: 604_800_000,
+                  },
+                  cumulativeBuys: bnbInPool,
+                  creatorFees: accumulatedFees,
+                  lastClaimTime: lastClaimTime,
+                  claimableAmount: canClaim ? accumulatedFees : 0,
+                  graduationProgress,
+                  priceMultiplier,
+                  graduationMarketCap,
+                  canClaim,
+                } as any : undefined,
 
-              // Graduation
-              graduated,
-              graduationDate: pool?.graduationDate ? new Date(Number(pool.graduationDate)) : undefined,
-              startingMarketCap: Number(tokenInfo?.startingMarketCap ?? 0),
+                // Graduation
+                graduated,
+                graduationDate: graduated ? new Date() : undefined,
+                startingMarketCap: 0,
 
-              // Social
-              twitter: tokenMeta?.twitter || tokenInfo?.twitter || undefined,
-              telegram: tokenMeta?.telegram || tokenInfo?.telegram || undefined,
-              website: tokenMeta?.website || tokenInfo?.website || undefined,
+                // Social - Use correct field names
+                twitter: tokenMeta.twitter,
+                telegram: tokenMeta.telegram,
+                website: tokenMeta.website,
 
-              // Stats
-              holders: Number(pool?.holders ?? tokenInfo?.holders ?? 0),
-              transactions: Number(pool?.transactions ?? 0),
-              // keep index for sorting "newest"
-              // @ts-ignore
-              __index: idx,
-            } as any;
+                // Stats
+                holders: 0,
+                transactions: 0,
+                
+                // Keep index for sorting
+                __index: idx,
+              } as Token;
 
-            return token;
+              return token;
+              
+            } catch (err) {
+              console.error(`Error fetching token ${addr}:`, err);
+              // Return minimal fallback on error
+              return {
+                id: addr,
+                name: "Error Loading Token",
+                symbol: "ERR",
+                description: "Failed to load token data",
+                image: "https://images.unsplash.com/photo-1614064641938-3bbee52942c1?w=400&h=400&fit=crop",
+                contractAddress: addr,
+                creatorAddress: "0x0000000000000000000000000000000000000000",
+                status: "active",
+                launchType: "instant-launch",
+                createdAt: new Date(),
+                totalSupply: 0,
+                currentPrice: 0,
+                marketCap: 0,
+                liquidityPool: 0,
+                volume24h: 0,
+                priceChange24h: 0,
+                graduated: false,
+                holders: 0,
+                transactions: 0,
+                __index: idx,
+              } as Token;
+            }
           })
         );
 
+        if (cancelled) return;
         setLiveTokens(items);
+
+        
       } catch (e: any) {
+        console.error("Error loading launches:", e);
         if (!cancelled) setLoadError(String(e?.message || e));
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
 
-    // initial load
+    // Initial load
     void load();
-    // periodic refresh every 15s
-    interval = setInterval(() => {
-      void load();
-    }, 15000);
 
     return () => {
       cancelled = true;
-      if (interval) clearInterval(interval);
     };
   }, [sdk]);
 
-  const tokens = liveTokens && liveTokens.length > 0 ? liveTokens : mockTokens;
+  const tokens = liveTokens || [];
 
   const filteredTokens = useMemo(() => {
     const q = search.trim().toLowerCase();
-
     let list: any[] = tokens;
 
-    // filtering
+    // Filtering
     if (filterBy === "project") list = list.filter((t) => t.launchType === "project-raise");
     if (filterBy === "instant") list = list.filter((t) => t.launchType === "instant-launch");
     if (filterBy === "activeRaises")
@@ -250,7 +283,7 @@ export default function Home() {
     if (filterBy === "trading") list = list.filter((t) => t.graduated === false);
     if (filterBy === "graduated") list = list.filter((t) => t.graduated === true);
 
-    // search
+    // Search
     if (q) {
       list = list.filter((t) => {
         const name = String(t?.name || "").toLowerCase();
@@ -260,23 +293,30 @@ export default function Home() {
       });
     }
 
-    // sorting
+    // Sorting
     list = [...list];
     if (sortBy === "newest") {
-      list.sort((a, b) => (a.__index ?? 0) - (b.__index ?? 0)); // original order: newest last
-      list.reverse();
+      list.sort((a, b) => (b.__index ?? 0) - (a.__index ?? 0));
     } else if (sortBy === "marketCap") {
       list.sort((a, b) => (b.marketCap ?? 0) - (a.marketCap ?? 0));
     } else if (sortBy === "progress") {
       list.sort((a, b) => {
-        const pa = a.launchType === "instant-launch" ? a.instantLaunch?.graduationProgress ?? 0 : (a.projectRaise ? (a.projectRaise.raisedAmount / (a.projectRaise.targetAmount || 1)) * 100 : 0);
-        const pb = b.launchType === "instant-launch" ? b.instantLaunch?.graduationProgress ?? 0 : (b.projectRaise ? (b.projectRaise.raisedAmount / (b.projectRaise.targetAmount || 1)) * 100 : 0);
+        const pa = a.launchType === "instant-launch" 
+          ? a.instantLaunch?.graduationProgress ?? 0 
+          : (a.projectRaise ? (a.projectRaise.raisedAmount / (a.projectRaise.targetAmount || 1)) * 100 : 0);
+        const pb = b.launchType === "instant-launch" 
+          ? b.instantLaunch?.graduationProgress ?? 0 
+          : (b.projectRaise ? (b.projectRaise.raisedAmount / (b.projectRaise.targetAmount || 1)) * 100 : 0);
         return pb - pa;
       });
     } else if (sortBy === "endingSoon") {
       list.sort((a, b) => {
-        const ea = a.launchType === "project-raise" ? a.projectRaise?.endTime?.getTime?.() ?? Infinity : Infinity;
-        const eb = b.launchType === "project-raise" ? b.projectRaise?.endTime?.getTime?.() ?? Infinity : Infinity;
+        const ea = a.launchType === "project-raise" 
+          ? a.projectRaise?.endTime?.getTime?.() ?? Infinity 
+          : Infinity;
+        const eb = b.launchType === "project-raise" 
+          ? b.projectRaise?.endTime?.getTime?.() ?? Infinity 
+          : Infinity;
         return ea - eb;
       });
     }
@@ -308,14 +348,19 @@ export default function Home() {
                 View Leaderboard
               </button>
             </div>
+            
             {loading && (
               <p className="text-xs text-accent/80">Loading launches…</p>
             )}
             {!loading && liveTokens && (
-              <p className="text-xs text-accent/80">Showing {liveTokens.length} live launch{liveTokens.length === 1 ? "" : "es"} from SDK</p>
+              <p className="text-xs text-accent/80">
+                Showing {liveTokens.length} live launch{liveTokens.length === 1 ? "" : "es"} from SDK
+              </p>
             )}
             {!loading && loadError && (
-              <p className="text-xs text-destructive">Live launches unavailable. Showing sample data.</p>
+              <p className="text-xs text-destructive">
+                Live launches unavailable. Showing sample data.
+              </p>
             )}
           </div>
         </div>
@@ -327,6 +372,7 @@ export default function Home() {
           <div>
             <h2 className="text-2xl sm:text-3xl font-black mb-1">Tokens</h2>
           </div>
+          
           <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
             <div className="relative max-w-xl flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -337,6 +383,7 @@ export default function Home() {
                 className="pl-10"
               />
             </div>
+            
             <select
               value={filterBy}
               onChange={(e) => setFilterBy(e.target.value as any)}
@@ -349,6 +396,7 @@ export default function Home() {
               <option value="trading">Trading</option>
               <option value="graduated">Graduated</option>
             </select>
+            
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
@@ -362,12 +410,20 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 min-w-0">
-          {filteredTokens.map((token: any) => (
-            <TokenCard key={token.id} token={token} />
-          ))}
-        </div>
+        {/* Loading Animation or Grid */}
+        {loading ? (
+          <TokensLoadingAnimation />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 min-w-0">
+            {filteredTokens.map((token: any) => (
+              <TokenCard 
+                key={token.id} 
+                token={token} 
+                onContribute={() => handleContribute(token)}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Footer */}
@@ -394,6 +450,13 @@ export default function Home() {
           </div>
         </div>
       </footer>
+
+      {/* Contribute Modal */}
+      <ContributeModal
+        token={contributeToken}
+        isOpen={!!contributeToken}
+        onClose={() => setContributeToken(null)}
+      />
     </div>
   );
 }

@@ -11,6 +11,7 @@ import {
   formatAddress,
   formatTimeRemaining,
   getProgressPercentage,
+  formatPrice
 } from "@/lib/utils/format";
 import {
   ExternalLink,
@@ -23,12 +24,46 @@ import {
   CheckCircle,
 } from "lucide-react";
 import Image from "next/image";
+import {ethers} from "ethers";
+import { useSafuPadSDK } from "@/lib/safupad-sdk";
+import { useEffect, useState } from "react";
 
 interface TokenInfoProps {
   token: Token;
 }
 
 export function TokenInfo({ token }: TokenInfoProps) {
+  const { sdk } = useSafuPadSDK();
+  const [marketCapBnb, setMarketCapBnb] = useState<number>(0);
+  const [targetCapBnb, setTargetCapBnb] = useState<number>(0);
+
+  useEffect(() => {
+    const convertToB = async () => {
+      if (!sdk) return;
+      
+      try {
+        const TARGET_CAP_USD = 90000;
+        
+        // Convert current market cap to BNB
+        const currentBnb = await sdk.priceOracle.usdToBnb(
+          ethers.parseEther(token.marketCap.toString())
+        );
+        
+        // Convert target cap to BNB
+        const targetBnb = await sdk.priceOracle.usdToBnb(
+          ethers.parseEther(TARGET_CAP_USD.toString())
+        );
+        
+        setMarketCapBnb(Number(ethers.formatEther(currentBnb)));
+        setTargetCapBnb(Number(ethers.formatEther(targetBnb)));
+      } catch (error) {
+        console.error("Error converting to BNB:", error);
+      }
+    };
+
+    void convertToB();
+  }, [sdk, token.marketCap]);
+
   const copyAddress = () => {
     navigator.clipboard.writeText(token.contractAddress);
     alert("Contract address copied!");
@@ -89,12 +124,6 @@ export function TokenInfo({ token }: TokenInfoProps) {
                   </a>
                 </Button>
               )}
-              <Button variant="outline" size="sm" asChild className="controller-btn-outline">
-                <a href={token.infofiDashboard.dashboardUrl} target="_blank" rel="noopener noreferrer">
-                  <Activity className="w-3 h-3 mr-1" />
-                  InfoFi Dashboard
-                </a>
-              </Button>
             </div>
           </div>
         </div>
@@ -116,7 +145,7 @@ export function TokenInfo({ token }: TokenInfoProps) {
             <TrendingUp className="w-4 h-4 text-primary" />
             <span className="text-xs text-muted-foreground">Price</span>
           </div>
-          <p className="text-xl font-bold">{formatCurrency(token.currentPrice)}</p>
+          <p className="text-xl font-bold">{formatPrice(token.currentPrice)}</p>
           <p className={`text-sm ${token.priceChange24h >= 0 ? "text-green-500" : "text-red-500"}`}>
             {formatPercentage(token.priceChange24h)}
           </p>
@@ -129,7 +158,7 @@ export function TokenInfo({ token }: TokenInfoProps) {
           </div>
           <p className="text-xl font-bold">{formatCurrency(token.marketCap)}</p>
           <p className="text-sm text-muted-foreground">
-            {formatCurrency(token.liquidityPool)} liquidity
+            {formatCurrency(Number(ethers.formatUnits(token.liquidityPool, 18)))} liquidity
           </p>
         </Card>
 
@@ -186,6 +215,32 @@ export function TokenInfo({ token }: TokenInfoProps) {
         </Card>
       )}
 
+      {/* Project Raise Graduation Progress */}
+      {token.launchType === "project-raise" && !token.graduated && (
+        <Card className="p-6">
+          <h3 className="text-lg font-bold mb-4">Graduation Progress</h3>
+          <div className="space-y-4">
+            <div>
+              <div className="flex justify-between text-sm mb-2">
+                <span className="text-muted-foreground">To 90K Cap</span>
+                <span className="font-bold">
+                  {marketCapBnb.toFixed(4)} / {targetCapBnb.toFixed(4)} BNB
+                </span>
+              </div>
+              <Progress
+                value={getProgressPercentage(token.marketCap, 90000)}
+                className="h-3"
+              />
+            </div>
+            <div className="p-3 bg-muted/50 rounded-lg text-sm">
+              <p className="text-muted-foreground">
+                For this token to graduate, the token must reach a 90K market cap.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Instant Launch Progress */}
       {token.launchType === "instant-launch" && token.instantLaunch && !token.graduated && (
         <Card className="p-6">
@@ -193,22 +248,19 @@ export function TokenInfo({ token }: TokenInfoProps) {
           <div className="space-y-4">
             <div>
               <div className="flex justify-between text-sm mb-2">
-                <span className="text-muted-foreground">Cumulative Buys</span>
+                <span className="text-muted-foreground">To 90K Cap</span>
                 <span className="font-bold">
-                  {token.instantLaunch.cumulativeBuys.toFixed(2)} / {token.instantLaunch.config.graduationThreshold} BNB
+                  {marketCapBnb.toFixed(4)} / {targetCapBnb.toFixed(4)} BNB
                 </span>
               </div>
               <Progress
-                value={getProgressPercentage(
-                  token.instantLaunch.cumulativeBuys,
-                  token.instantLaunch.config.graduationThreshold
-                )}
+                value={getProgressPercentage(token.marketCap, 90000)}
                 className="h-3"
               />
             </div>
             <div className="p-3 bg-muted/50 rounded-lg text-sm">
               <p className="text-muted-foreground">
-                Once 15 BNB in cumulative buys is reached, this token will graduate to PancakeSwap!
+                For this token to graduate, the token must reach a 90K market cap.
               </p>
             </div>
           </div>

@@ -103,7 +103,7 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col justify-center">
         <DialogHeader>
           <DialogTitle className="text-2xl flex items-center gap-2">
             <Zap className="w-6 h-6 text-primary" />

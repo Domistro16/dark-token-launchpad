@@ -7,20 +7,46 @@ import { Progress } from "@/components/ui/progress";
 import { 
   formatCurrency, 
   formatPercentage, 
+  formatPrice, 
   formatTimeRemaining,
   getProgressPercentage 
 } from "@/lib/utils/format";
-import { Clock, TrendingUp, Users, ExternalLink } from "lucide-react";
+import { Clock, TrendingUp, Users, ExternalLink, DollarSign } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { useSafuPadSDK } from "@/lib/safupad-sdk";
+import { useEffect, useState } from "react";
+import { useAccount } from "wagmi";
+import { ethers } from "ethers";
 
 interface TokenCardProps {
   token: Token;
+  onContribute?: () => void;
 }
 
-export function TokenCard({ token }: TokenCardProps) {
+export function TokenCard({ token, onContribute }: TokenCardProps) {
+  const { sdk } = useSafuPadSDK();
+  const { address: userAddress } = useAccount();
+  const [marketCapBnb, setMarketCapBnb] = useState<string>("0");
+  const [targetCapBnb, setTargetCapBnb] = useState<string>("0");
+  
   const isProjectRaise = token.launchType === "project-raise";
   const isGraduated = token.graduated;
+
+  // Convert USD to BNB for instant launch cards
+  useEffect(() => {
+    if (!isProjectRaise && !isGraduated && sdk) {
+      const convertToBnb = async () => {
+        try {
+          setMarketCapBnb(formatCurrency(token.marketCap));
+          setTargetCapBnb(formatCurrency(90000));
+        } catch (error) {
+          console.error("Error converting USD to BNB:", error);
+        }
+      };
+      void convertToBnb();
+    }
+  }, [sdk, token.marketCap, isProjectRaise, isGraduated]);
 
   // Derive display status per spec
   const displayStatus = (() => {
@@ -33,6 +59,7 @@ export function TokenCard({ token }: TokenCardProps) {
     }
     return isGraduated ? "Graduated" : "Trading";
   })();
+  const isRaising = displayStatus === "Raising";
   
   return (
     <div className="bg-card/70 border-2 border-primary/30 pixel-corners hover:border-primary/60 transition-all hover:shadow-xl glow-effect flex h-full flex-col">
@@ -65,21 +92,54 @@ export function TokenCard({ token }: TokenCardProps) {
 
       {/* Stats */}
       <div className="p-4 space-y-3 flex-1">
+        {/* Creator Fee Banner for Instant Launch */}
+        {!isProjectRaise && token.instantLaunch && (
+          <div className="bg-primary/10 border border-primary/30 rounded-md p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-primary" />
+                <span className="text-xs font-bold text-primary">Creator Fees</span>
+              </div>
+              {token.instantLaunch.canClaim && (
+                <Badge variant="default" className="text-xs">
+                  Claimable
+                </Badge>
+              )}
+            </div>
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Accumulated:</span>
+                <span className="font-medium">{formatCurrency(token.instantLaunch.creatorFees)}</span>
+              </div>
+              {token.instantLaunch.lastClaimTime && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Last Claim:</span>
+                  <span className="font-medium">
+                    {new Date(token.instantLaunch.lastClaimTime).toLocaleDateString()}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Price & Market Cap */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">Price</p>
-            <p className="text-sm font-bold">{formatCurrency(token.currentPrice)}</p>
-            <p className={`text-xs ${token.priceChange24h >= 0 ? "text-green-500" : "text-red-500"}`}>
-              {formatPercentage(token.priceChange24h)}
-            </p>
+        {!(isProjectRaise && isRaising) && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Price</p>
+              <p className="text-sm font-bold">{formatPrice(token.currentPrice)}</p>
+              <p className={`text-xs ${token.priceChange24h >= 0 ? "text-green-500" : "text-red-500"}`}>
+                {formatPercentage(token.priceChange24h)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Market Cap</p>
+              <p className="text-sm font-bold">{formatCurrency(token.marketCap)}</p>
+              <p className="text-xs text-muted-foreground">{formatCurrency(token.volume24h)} Vol</p>
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">Market Cap</p>
-            <p className="text-sm font-bold">{formatCurrency(token.marketCap)}</p>
-            <p className="text-xs text-muted-foreground">{formatCurrency(token.volume24h)} Vol</p>
-          </div>
-        </div>
+        )}
 
         {/* Project Raise Progress */}
         {isProjectRaise && token.projectRaise && (
@@ -111,29 +171,29 @@ export function TokenCard({ token }: TokenCardProps) {
               <span className="font-medium">
                 {(token.instantLaunch as any)?.graduationProgress?.toFixed?.(0) ?? 0}% toward PancakeSwap
               </span>
-            </div>
+            </div> 
             <Progress 
               value={Number((token.instantLaunch as any)?.graduationProgress ?? 0)} 
               className="h-2"
             />
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">Price Multiplier</span>
-              <span className="font-medium">{Number((token.instantLaunch as any)?.priceMultiplier ?? 1).toFixed(2)}x</span>
+              <span className="font-medium">{Number(((token.instantLaunch as any)?.priceMultiplier ?? 100) / 100).toFixed(2)}x</span>
             </div>
           </div>
         )}
 
-        {/* Graduation Status to $500K Cap (visual meter remains useful) */}
+        {/* Graduation Status to 90K Cap */}
         {!isProjectRaise && !isGraduated && (
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">To $500K Cap</span>
+              <span className="text-muted-foreground">To 90K Cap</span>
               <span className="font-medium">
-                {formatCurrency(token.marketCap)} / $500K
+                {marketCapBnb} USD / {targetCapBnb} USD
               </span>
             </div>
             <Progress 
-              value={getProgressPercentage(token.marketCap, 500000)} 
+              value={getProgressPercentage(token.marketCap, 90000)} 
               className="h-2"
             />
           </div>
@@ -154,11 +214,15 @@ export function TokenCard({ token }: TokenCardProps) {
 
       {/* Actions */}
       <div className="p-4 border-t border-border space-y-2">
-        <Link href={`/token/${token.id}`}>
-          <Button className="controller-btn w-full">
-            Trade Now
+        {isRaising ? (
+          <Button className="controller-btn w-full" onClick={onContribute}>
+            Contribute
           </Button>
-        </Link>
+        ) : (
+          <Link href={`/token/${token.id}`}>
+            <Button className="controller-btn w-full">Trade Now</Button>
+          </Link>
+        )}
         <div className="flex gap-2">
           {token.twitter && (
             <Button size="sm" className="controller-btn-outline arcade-btn flex-1" asChild>

@@ -7,28 +7,63 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowDownUp, TrendingUp, TrendingDown } from "lucide-react";
-import { formatCurrency } from "@/lib/utils/format";
+import { ArrowDownUp, TrendingUp, TrendingDown, Loader2 } from "lucide-react";
+import { formatCurrency, formatPrice } from "@/lib/utils/format";
+import { useSafuPadSDK } from "@/lib/safupad-sdk";
+import { ethers } from "ethers";
+import { toast } from "sonner";
 
 interface TradingInterfaceProps {
   token: Token;
 }
 
 export function TradingInterface({ token }: TradingInterfaceProps) {
+  const { sdk } = useSafuPadSDK();
   const [tradeType, setTradeType] = useState<"buy" | "sell">("buy");
   const [amount, setAmount] = useState("");
   const [bnbAmount, setBnbAmount] = useState("");
+  const [isTrading, setIsTrading] = useState(false);
 
-  const handleTrade = () => {
+  const handleTrade = async () => {
     if (!amount || parseFloat(amount) <= 0) {
-      alert("Please enter a valid amount");
+      toast.error("Please enter a valid amount");
       return;
     }
-    
-    const action = tradeType === "buy" ? "Buying" : "Selling";
-    alert(`${action} ${amount} ${token.symbol}!`);
-    setAmount("");
-    setBnbAmount("");
+
+    if (!sdk) {
+      toast.error("SDK not initialized");
+      return;
+    }
+
+    setIsTrading(true);
+
+    try {
+      if (tradeType === "buy") {
+        // Buy tokens with BNB
+        const tx = await sdk.bondingDex.buyTokens(token.contractAddress, bnbAmount);
+        
+        toast.success(`Successfully bought ${amount} ${token.symbol}!`);
+        console.log("Buy transaction:", tx);
+      } else {
+        // Sell tokens for BNB
+        const tx = await sdk.bondingDex.sellTokens(token.contractAddress, amount);
+        
+        toast.success(`Successfully sold ${amount} ${token.symbol}!`);
+        console.log("Sell transaction:", tx);
+      }
+
+      // Reset form
+      setAmount("");
+      setBnbAmount("");
+      
+      // Optionally reload token data here
+      
+    } catch (error: any) {
+      console.error("Trade error:", error);
+      toast.error(error?.message || "Transaction failed");
+    } finally {
+      setIsTrading(false);
+    }
   };
 
   const calculateBnb = (tokenAmount: string) => {
@@ -76,6 +111,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
               placeholder="0.0"
               value={bnbAmount}
               onChange={(e) => handleBnbChange(e.target.value)}
+              disabled={isTrading}
             />
             <p className="text-xs text-muted-foreground">
               Balance: 1.5 BNB
@@ -96,6 +132,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
               placeholder="0.0"
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
+              disabled={isTrading}
             />
             <p className="text-xs text-muted-foreground">
               Balance: 0 {token.symbol}
@@ -105,7 +142,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
           <div className="space-y-2 p-4 bg-muted/50 rounded-lg text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Price</span>
-              <span className="font-medium">{formatCurrency(token.currentPrice)}</span>
+              <span className="font-medium">{formatPrice(token.currentPrice)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Trading Fee ({token.launchType === "project-raise" ? "1%" : "2%"})</span>
@@ -119,8 +156,20 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
             </div>
           </div>
 
-          <Button onClick={handleTrade} className="w-full controller-btn" size="lg">
-            Buy {token.symbol}
+          <Button 
+            onClick={handleTrade} 
+            className="w-full controller-btn" 
+            size="lg"
+            disabled={isTrading || !bnbAmount || parseFloat(bnbAmount) <= 0}
+          >
+            {isTrading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Buying...
+              </>
+            ) : (
+              `Buy ${token.symbol}`
+            )}
           </Button>
         </TabsContent>
 
@@ -133,6 +182,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
               placeholder="0.0"
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
+              disabled={isTrading}
             />
             <p className="text-xs text-muted-foreground">
               Balance: 0 {token.symbol}
@@ -153,6 +203,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
               placeholder="0.0"
               value={bnbAmount}
               onChange={(e) => handleBnbChange(e.target.value)}
+              disabled={isTrading}
             />
             <p className="text-xs text-muted-foreground">
               Balance: 1.5 BNB
@@ -176,8 +227,21 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
             </div>
           </div>
 
-          <Button onClick={handleTrade} className="w-full controller-btn" size="lg" variant="destructive">
-            Sell {token.symbol}
+          <Button 
+            onClick={handleTrade} 
+            className="w-full controller-btn" 
+            size="lg" 
+            variant="destructive"
+            disabled={isTrading || !amount || parseFloat(amount) <= 0}
+          >
+            {isTrading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Selling...
+              </>
+            ) : (
+              `Sell ${token.symbol}`
+            )}
           </Button>
         </TabsContent>
       </Tabs>
@@ -196,6 +260,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
                 setBnbAmount(val);
                 setAmount(calculateTokens(val));
               }}
+              disabled={isTrading}
             >
               {val} BNB
             </Button>
