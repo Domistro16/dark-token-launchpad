@@ -6,8 +6,8 @@ import {
   DialogContent,
   DialogDescription,
   DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  DialogTitle } from
+"@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,8 +29,7 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
     initialBuy: "0",
     twitter: "",
     telegram: "",
-    imageUrl: "",
-    infofiWallet: "",
+    imageUrl: ""
   });
 
   const TOTAL_SUPPLY = 1000000000; // 1 billion constant
@@ -78,12 +77,10 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
           website: "",
           twitter: formData.twitter.trim(),
           telegram: formData.telegram.trim(),
-          discord: "",
-          // capture InfoFi wallet (optional, not enforced by SDK)
-          infofiWallet: formData.infofiWallet.trim(),
+          discord: ""
         },
         initialBuyBNB: formData.initialBuy,
-        burnLP: false,
+        burnLP: false
       } as const;
 
       const tx = await sdk.launchpad.createInstantLaunch(params);
@@ -114,34 +111,34 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
         <div className="space-y-4">
           <Alert>
             <Info className="h-4 w-4" />
-            <AlertDescription>
-              No approval needed! Your token goes live instantly. 2.1% trading fee: 1% to you, 1.0% to InfoFi platform, 0.1% platform fee.
+            <AlertDescription className="!whitespace-pre-line !whitespace-pre-line">No approval needed! Your token goes live instantly. 2.0% trading fee: 1% to you, 0.9% to InfoFi platform, 0.1% platform fee.
+
             </AlertDescription>
           </Alert>
 
-          {sdkError && (
-            <Alert>
+          {sdkError &&
+          <Alert>
               <AlertDescription>
                 SDK error: {String((sdkError as any)?.message || sdkError)}
               </AlertDescription>
             </Alert>
-          )}
+          }
 
-          {submitError && (
-            <Alert>
+          {submitError &&
+          <Alert>
               <AlertDescription>
                 {submitError}
               </AlertDescription>
             </Alert>
-          )}
+          }
 
-          {txHash && (
-            <Alert>
+          {txHash &&
+          <Alert>
               <AlertDescription>
                 Transaction submitted: {txHash}
               </AlertDescription>
             </Alert>
-          )}
+          }
 
           <div className="space-y-2">
             <Label htmlFor="name">Token Name *</Label>
@@ -150,8 +147,8 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
               placeholder="e.g., Moon Rocket"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              disabled={submitting}
-            />
+              disabled={submitting} />
+
           </div>
 
           <div className="space-y-2">
@@ -162,8 +159,8 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
               value={formData.symbol}
               onChange={(e) => setFormData({ ...formData, symbol: e.target.value.toUpperCase() })}
               maxLength={10}
-              disabled={submitting}
-            />
+              disabled={submitting} />
+
           </div>
 
           <div className="space-y-2">
@@ -174,8 +171,8 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={3}
-              disabled={submitting}
-            />
+              disabled={submitting} />
+
           </div>
 
           <div className="space-y-2">
@@ -198,8 +195,8 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
               placeholder="0"
               value={formData.initialBuy}
               onChange={(e) => setFormData({ ...formData, initialBuy: e.target.value })}
-              disabled={submitting}
-            />
+              disabled={submitting} />
+
             <p className="text-xs text-muted-foreground">
               You may buy 0 BNB to start; higher buys can improve initial liquidity.
             </p>
@@ -213,8 +210,8 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
               placeholder="https://example.com/token-image.png"
               value={formData.imageUrl}
               onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-              disabled={submitting}
-            />
+              disabled={submitting} />
+
             <p className="text-xs text-muted-foreground">
               Direct link to your token's image (PNG, JPG, GIF)
             </p>
@@ -228,8 +225,8 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
                 placeholder="https://twitter.com/..."
                 value={formData.twitter}
                 onChange={(e) => setFormData({ ...formData, twitter: e.target.value })}
-                disabled={submitting}
-              />
+                disabled={submitting} />
+
             </div>
 
             <div className="space-y-2">
@@ -239,20 +236,9 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
                 placeholder="https://t.me/..."
                 value={formData.telegram}
                 onChange={(e) => setFormData({ ...formData, telegram: e.target.value })}
-                disabled={submitting}
-              />
-            </div>
-          </div>
+                disabled={submitting} />
 
-          <div className="space-y-2">
-            <Label htmlFor="infofiWallet">InfoFi Wallet (optional)</Label>
-            <Input
-              id="infofiWallet"
-              placeholder="0x..."
-              value={formData.infofiWallet}
-              onChange={(e) => setFormData({ ...formData, infofiWallet: e.target.value })}
-              disabled={submitting}
-            />
+            </div>
           </div>
 
           <div className="bg-muted/50 rounded-lg p-4 space-y-2">
@@ -274,12 +260,12 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
           <div className="bg-muted/50 rounded-lg p-4 space-y-2">
             <h4 className="font-semibold text-sm mb-3">Graduation Criteria</h4>
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Graduation Market Cap:</span>
-              <span className="font-medium">$90,000</span>
+              <span className="text-muted-foreground !whitespace-pre-line !w-0 !h-0">Graduation T:</span>
+              <span className="font-medium !whitespace-pre-line">15 BNB</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">After Graduation:</span>
-              <span className="font-medium">Listed on PancakeSwap + Dedicated InfoFi dashboard</span>
+              <span className="font-medium !whitespace-pre-line">Listed on PancakeSwap</span>
             </div>
           </div>
 
@@ -287,7 +273,7 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
             <h4 className="font-semibold text-sm mb-3">Creator Benefits</h4>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Trading Fee Share:</span>
-              <span className="font-medium">1% per trade</span>
+              <span className="font-medium !whitespace-pre-line">2% per trade</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Claim Cooldown:</span>
@@ -312,9 +298,6 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
               <p><strong>Token:</strong> {formData.name || "---"} ({formData.symbol || "---"})</p>
               <p><strong>Supply:</strong> {TOTAL_SUPPLY.toLocaleString()}</p>
               <p><strong>Initial Buy:</strong> {formData.initialBuy} BNB</p>
-              {formData.infofiWallet && (
-                <p><strong>InfoFi Wallet:</strong> {formData.infofiWallet}</p>
-              )}
               <p><strong>Status:</strong> <span className="text-primary">Goes live immediately</span></p>
             </div>
           </div>
@@ -325,6 +308,6 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
           </Button>
         </div>
       </DialogContent>
-    </Dialog>
-  );
+    </Dialog>);
+
 }

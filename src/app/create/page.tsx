@@ -19,8 +19,8 @@ export default function CreatePage() {
       <div className="container mx-auto px-4 py-12">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-12">
-            <h1 className="text-4xl md:text-5xl font-bold mb-4">
-              Choose Your Launch Type
+            <h1 className="text-4xl md:text-5xl font-bold mb-4 !whitespace-pre-line">TOKENIZE ANYTHING
+
             </h1>
             <p className="text-xl text-muted-foreground">
               Select the perfect launch model for your token
@@ -59,11 +59,11 @@ export default function CreatePage() {
                 </div>
                 <div className="flex items-start gap-2">
                   <Check className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
-                  <span className="text-sm">1.9% trading fee (1.0% creator, 0.6% InfoFi, 0.3% liquidity)</span>
+                  <span className="text-sm">2% trading fee (1% creator, 0.6% InfoFi, 0.3% liquidity, 0.1% platform)</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <Check className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
-                  <span className="text-sm">Graduate to PancakeSwap at $500k market cap</span>
+                  <span className="text-sm">Graduate to PancakeSwap at 15 BNB</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <Check className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
@@ -71,11 +71,11 @@ export default function CreatePage() {
                 </div>
               </div>
 
-              <Button 
-                className="w-full controller-btn" 
+              <Button
+                className="w-full controller-btn"
                 size="lg"
-                onClick={() => setSelectedType("project-raise")}
-              >
+                onClick={() => setSelectedType("project-raise")}>
+
                 Launch Project Raise
               </Button>
             </Card>
@@ -103,11 +103,11 @@ export default function CreatePage() {
                 </div>
                 <div className="flex items-start gap-2">
                   <Check className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
-                  <span className="text-sm">2.1% trading fee (0.1% platform, 1.0% creator, 1.0% InfoFi)</span>
+                  <span className="text-sm">2% trading fee (0.1% platform, 1% creator, 0.9% InfoFi)</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <Check className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
-                  <span className="text-sm">Graduate at $90k market cap</span>
+                  <span className="text-sm">Graduate at 15 BNB</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <Check className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
@@ -123,11 +123,11 @@ export default function CreatePage() {
                 </div>
               </div>
 
-              <Button 
-                className="w-full controller-btn" 
+              <Button
+                className="w-full controller-btn"
                 size="lg"
-                onClick={() => setSelectedType("instant-launch")}
-              >
+                onClick={() => setSelectedType("instant-launch")}>
+
                 Launch Instantly
               </Button>
             </Card>
@@ -169,18 +169,18 @@ export default function CreatePage() {
       </div>
 
       {/* Modals */}
-      {selectedType === "project-raise" && (
-        <ProjectRaiseModal 
-          isOpen={true} 
-          onClose={() => setSelectedType(null)} 
-        />
-      )}
-      {selectedType === "instant-launch" && (
-        <InstantLaunchModal 
-          isOpen={true} 
-          onClose={() => setSelectedType(null)} 
-        />
-      )}
-    </div>
-  );
+      {selectedType === "project-raise" &&
+      <ProjectRaiseModal
+        isOpen={true}
+        onClose={() => setSelectedType(null)} />
+
+      }
+      {selectedType === "instant-launch" &&
+      <InstantLaunchModal
+        isOpen={true}
+        onClose={() => setSelectedType(null)} />
+
+      }
+    </div>);
+
 }

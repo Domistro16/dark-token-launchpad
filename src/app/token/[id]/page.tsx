@@ -12,8 +12,9 @@ import { formatCurrency } from "@/lib/utils/format";
 import { Wallet, Coins, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSafuPadSDK } from "@/lib/safupad-sdk";
-import type { Token } from "@/types/token";
+import type { Token, Trade } from "@/types/token";
 import { ethers } from "ethers";
+import {useAccount} from "wagmi"
 
 export const abi = [{
       "inputs": [
@@ -81,11 +82,6 @@ export const abi = [{
           "type": "address"
         },
         {
-          "internalType": "address",
-          "name": "projectInfoFiWallet",
-          "type": "address"
-        },
-        {
           "internalType": "uint256",
           "name": "virtualBnbReserve",
           "type": "uint256"
@@ -131,6 +127,7 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
   const [token, setToken] = useState<Token | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [recentTrades, setRecentTrades] = useState<Trade[]>([]);
   const [creatorFeeInfo, setCreatorFeeInfo] = useState<{
     accumulatedFees: number;
     lastClaimTime: Date | null;
@@ -139,10 +136,11 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
     bnbInPool: number;
     canClaim: boolean;
   } | null>(null);
+  const {address} = useAccount()
   const [isInstantLaunch, setIsInstantLaunch] = useState(false);
   const [actualBnbInPool, setActualBnbInPool] = useState<number>(0);
   const [virtualLiquidityUSD, setVirtualLiquidityUSD] = useState<number>(0);
-  const [graduationBnbUSD, setGraduationBnbUSD] = useState<number>(0);
+  const [graduationBnb, setGraduationBnb] = useState<number>(0);
 
   // Fetch token data from SDK
   useEffect(() => {
@@ -195,14 +193,12 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
           
           // Convert graduation BNB threshold to USD
           const graduationBnbWei = BigInt(pool.graduationBnbThreshold);
-          const graduationUsdValue = await sdk.priceOracle.bnbToUSD(graduationBnbWei);
-          setGraduationBnbUSD(Number(ethers.formatEther(graduationUsdValue)));
+          setGraduationBnb(Number(ethers.formatEther(graduationBnbWei)));
         }
 
-        // Fetch creator fee info for instant-launch tokens
-        if (isInstant) {
+  
           try {
-            const feeInfo = await sdk.bonding.getCreatorFeeInfo(id);
+            const feeInfo = await sdk.bondingDex.getCreatorFeeInfo(id);
             console.log('Creator fee info:', feeInfo);
             
             const parsedFeeInfo = {
@@ -211,7 +207,7 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
                 ? new Date(Number(feeInfo.lastClaimTime) * 1000)
                 : null,
               graduationMarketCap: Number(ethers.formatEther(feeInfo.graduationMarketCap)),
-              currentMarketCap: Number(ethers.formatEther(feeInfo.currentMarketCap)),
+              currentMarketCap: Number(ethers.formatEther(await sdk.priceOracle.bnbToUSD(feeInfo.currentMarketCap))),
               bnbInPool: Number(ethers.formatEther(feeInfo.bnbInPool)),
               canClaim: Boolean(feeInfo.canClaim),
             };
@@ -233,7 +229,6 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
               });
             }
           }
-        }
 
         // Parse numeric values
         const totalRaisedUSD = Number(ethers.formatEther(launchInfo.totalRaisedUSD));
@@ -261,16 +256,36 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
         try {
           // Get 24h volume
           const volume24hData = await sdk.bondingDex.get24hVolume(id);
-          const volume24hBNB = Number(ethers.formatEther(volume24hData.totalVolumeBNB));
-          volume24h = await sdk.priceOracle.bnbToUSD(volume24hBNB);
-          
+          console.log(volume24hData)
+          const volume24hBNB = volume24hData.totalVolumeBNB;
+          const volume24hBNBFormatted = sdk.bondingDex.formatBNBAmount(volume24hBNB);
+          const vol = await sdk.priceOracle.bnbToUSD(Number(volume24hBNB));
+          volume24h = Number(ethers.formatUnits(vol.toString(), 18));
+                
           // Get total volume
           const totalVolumeData = await sdk.bondingDex.getTotalVolume(id);
           totalVolumeBNB = Number(ethers.formatEther(totalVolumeData.totalVolumeBNB));
           
-          // Get recent trades
-          const recentTrades = await sdk.bondingDex.getRecentTrades(id);
-          recentTradesCount = recentTrades.length;
+          // Get recent trades and convert to Trade format
+          const tradesData = await sdk.bondingDex.getRecentTrades(id);
+          recentTradesCount = tradesData.length;
+          
+          // Convert SDK TradeData format to Trade format
+          const convertedTrades: Trade[] = tradesData.map((tradeData, index) => ({
+            id: `${tradeData.txHash}-${index}`,
+            tokenId: id,
+            type: tradeData.type,
+            amount: Number(ethers.formatEther(tradeData.tokenAmount)),
+            price: Number(ethers.formatEther(tradeData.price)),
+            total: Number(ethers.formatEther(tradeData.bnbAmount)),
+            userAddress: tradeData.trader,
+            timestamp: new Date(tradeData.timestamp * 1000),
+            txHash: tradeData.txHash,
+          }));
+          
+          if (!cancelled) {
+            setRecentTrades(convertedTrades);
+          }
           
           // Get holder count
           holderCount = await sdk.bondingDex.getEstimatedHolderCount(id);
@@ -281,7 +296,8 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
             recentTradesCount,
             holderCount,
             volume24hData,
-            totalVolumeData
+            totalVolumeData,
+            convertedTrades
           });
         } catch (error) {
           console.warn(`Could not fetch volume/holder data for ${id}:`, error);
@@ -328,7 +344,7 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
               liquidityAllocation: 10,
               liquidityCap: 100000,
               graduationThreshold: 15,
-              tradingFee: { platform: 0.1, academy: 0.3, infofiPlatform: 0.6 },
+              tradingFee: { platform: 0.1, liquidity: 0.3, infofiPlatform: 0.6, creator: 1.0 },
             },
             raisedAmount: totalRaisedUSD,
             targetAmount: raiseMaxUSD || 0,
@@ -391,11 +407,13 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
   }, [sdk, id]);
 
   // Derive current user address from localStorage
-  const [currentAddress, setCurrentAddress] = useState<string | null>(null);
+  const [currentAddress, setCurrentAddress] = useState<string>(address);
   useEffect(() => {
     try {
       const addr = localStorage.getItem("walletAddress");
+      if(addr){
       setCurrentAddress(addr);
+      }
     } catch {}
   }, []);
 
@@ -407,7 +425,7 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
   // Show banner for ALL instant-launch tokens (with or without fee data)
   const showFeesBanner = isInstantLaunch;
   const canClaimFees = showFeesBanner && isCreator && creatorFeeInfo?.canClaim;
-
+  console.log(isCreator)
   // Loading state
   if (loading) {
     return (
@@ -425,13 +443,39 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
     );
   }
 
-  // Error state
+  // Error state - Show error message instead of notFound()
   if (error || !token) {
-    notFound();
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <div className="container mx-auto px-4 py-8">
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center space-y-4 max-w-md">
+              <div className="w-16 h-16 bg-destructive/20 rounded-full flex items-center justify-center mx-auto">
+                <Coins className="w-8 h-8 text-destructive" />
+              </div>
+              <h2 className="text-2xl font-bold">Token Not Found</h2>
+              <p className="text-muted-foreground">
+                {error || "Unable to load token data. The token may not exist or there was an error fetching its information."}
+              </p>
+              <div className="pt-4">
+                <p className="text-xs text-muted-foreground mb-2">Token Address:</p>
+                <code className="text-xs bg-muted px-3 py-2 rounded break-all block">
+                  {id}
+                </code>
+              </div>
+              <Button 
+                className="controller-btn mt-4" 
+                onClick={() => window.location.href = '/'}
+              >
+                Back to Home
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
-
-  // Mock trades for now - will be replaced with actual trade history from SDK
-  const tokenTrades: any[] = [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -470,7 +514,7 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
                     <div>
                       <p className="text-xs text-muted-foreground">Graduation BNB</p>
                       <p className="text-xl font-black tracking-wide">
-                        {formatCurrency(graduationBnbUSD)}
+                        {graduationBnb} BNB
                       </p>
                     </div>
                   </div>
@@ -510,7 +554,7 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
             {token.projectRaise && (
               <VestingTimeline vestingSchedule={token.projectRaise.vestingSchedule} />
             )}
-            <TradeHistory trades={tokenTrades} />
+            <TradeHistory trades={recentTrades} />
           </div>
 
           {/* Right Column - Trading Interface */}

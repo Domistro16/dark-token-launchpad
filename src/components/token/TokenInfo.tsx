@@ -27,6 +27,7 @@ import Image from "next/image";
 import {ethers} from "ethers";
 import { useSafuPadSDK } from "@/lib/safupad-sdk";
 import { useEffect, useState } from "react";
+import { useAccount } from "wagmi";
 
 interface TokenInfoProps {
   token: Token;
@@ -34,35 +35,34 @@ interface TokenInfoProps {
 
 export function TokenInfo({ token }: TokenInfoProps) {
   const { sdk } = useSafuPadSDK();
+  const { address } = useAccount();
   const [marketCapBnb, setMarketCapBnb] = useState<number>(0);
   const [targetCapBnb, setTargetCapBnb] = useState<number>(0);
+  const [bnbReserve, setBnbReserve] = useState<number>(0);
 
   useEffect(() => {
-    const convertToB = async () => {
+    const fetchPoolInfo = async () => {
       if (!sdk) return;
       
       try {
-        const TARGET_CAP_USD = 90000;
+        // Fetch pool info to get bnbReserve
+        const poolInfo = await sdk.bondingDex.getPoolInfo(token.id);
+        const reserve = Number(ethers.formatEther(poolInfo.bnbReserve));
+        setBnbReserve(reserve);
         
         // Convert current market cap to BNB
-        const currentBnb = await sdk.priceOracle.usdToBnb(
+        const currentBnb = await sdk.priceOracle.usdToBNB(
           ethers.parseEther(token.marketCap.toString())
         );
         
-        // Convert target cap to BNB
-        const targetBnb = await sdk.priceOracle.usdToBnb(
-          ethers.parseEther(TARGET_CAP_USD.toString())
-        );
-        
         setMarketCapBnb(Number(ethers.formatEther(currentBnb)));
-        setTargetCapBnb(Number(ethers.formatEther(targetBnb)));
       } catch (error) {
-        console.error("Error converting to BNB:", error);
+        console.error("Error fetching pool info:", error);
       }
     };
 
-    void convertToB();
-  }, [sdk, token.marketCap]);
+    void fetchPoolInfo();
+  }, [sdk, token.id, token.marketCap]);
 
   const copyAddress = () => {
     navigator.clipboard.writeText(token.contractAddress);
@@ -222,19 +222,19 @@ export function TokenInfo({ token }: TokenInfoProps) {
           <div className="space-y-4">
             <div>
               <div className="flex justify-between text-sm mb-2">
-                <span className="text-muted-foreground">To 90K Cap</span>
+                <span className="text-muted-foreground">To 15 BNB</span>
                 <span className="font-bold">
-                  {marketCapBnb.toFixed(4)} / {targetCapBnb.toFixed(4)} BNB
+                  {bnbReserve.toFixed(4)} BNB / 15 BNB
                 </span>
               </div>
               <Progress
-                value={getProgressPercentage(token.marketCap, 90000)}
+                value={getProgressPercentage(bnbReserve, 15)}
                 className="h-3"
               />
             </div>
             <div className="p-3 bg-muted/50 rounded-lg text-sm">
               <p className="text-muted-foreground">
-                For this token to graduate, the token must reach a 90K market cap.
+                For this token to graduate, the pool must reach 15 BNB.
               </p>
             </div>
           </div>
@@ -248,19 +248,19 @@ export function TokenInfo({ token }: TokenInfoProps) {
           <div className="space-y-4">
             <div>
               <div className="flex justify-between text-sm mb-2">
-                <span className="text-muted-foreground">To 90K Cap</span>
+                <span className="text-muted-foreground">To 15 BNB</span>
                 <span className="font-bold">
-                  {marketCapBnb.toFixed(4)} / {targetCapBnb.toFixed(4)} BNB
+                  {bnbReserve.toFixed(7)} BNB / 15 BNB
                 </span>
               </div>
               <Progress
-                value={getProgressPercentage(token.marketCap, 90000)}
+                value={getProgressPercentage(bnbReserve, 15)}
                 className="h-3"
               />
             </div>
             <div className="p-3 bg-muted/50 rounded-lg text-sm">
               <p className="text-muted-foreground">
-                For this token to graduate, the token must reach a 90K market cap.
+                For this token to graduate, the pool must reach 15 BNB.
               </p>
             </div>
           </div>

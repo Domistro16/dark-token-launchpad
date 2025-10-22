@@ -32,7 +32,6 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
     telegram: "",
     website: "",
     imageUrl: "",
-    infofiWallet: "",
     burnLP: false,
     vestingDuration: 3, // months, minimum 3
   });
@@ -55,10 +54,6 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
     // Basic validation
     if (!formData.name || !formData.symbol || !formData.targetAmount) {
       setError("Please fill in all required fields (name, symbol, target amount).");
-      return;
-    }
-    if (!formData.infofiWallet || formData.infofiWallet.trim() === "") {
-      setError("InfoFi wallet address is required.");
       return;
     }
     const targetBNB = Number(formData.targetAmount);
@@ -91,15 +86,15 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
         discord: "",
       };
 
+      // ✅ UPDATED for SDK v2.0.0: Use raiseTargetBNB and raiseMaxBNB instead of USD
       const params = {
         name: formData.name.trim(),
         symbol: formData.symbol.trim().toUpperCase(),
         totalSupply: TOTAL_SUPPLY,
-        raiseTargetUSD: String(targetBNB),
-        raiseMaxUSD: String(targetBNB),
+        raiseTargetBNB: String(targetBNB), // ✅ Changed from raiseTargetUSD
+        raiseMaxBNB: String(targetBNB),    // ✅ Changed from raiseMaxUSD
         vestingDuration: formData.vestingDuration * 30,
         metadata,
-        projectInfoFiWallet: formData.infofiWallet.trim(),
         burnLP: formData.burnLP,
       };
 
@@ -154,7 +149,7 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>
-                Your project will require admin approval before going live. Raise window is 24 hours.
+                Raise window is 24 hours. Target between 50-500 BNB.
               </AlertDescription>
             </Alert>
 
@@ -302,20 +297,6 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
               </p>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="infofiWallet">InfoFi Wallet Address *</Label>
-              <Input
-                id="infofiWallet"
-                placeholder="0x..."
-                value={formData.infofiWallet}
-                onChange={(e) => setFormData({ ...formData, infofiWallet: e.target.value })}
-                disabled={submitting || isInitializing}
-              />
-              <p className="text-xs text-muted-foreground">
-                Required - This wallet will receive InfoFi platform fees
-              </p>
-            </div>
-
             <div className="bg-muted/50 rounded-lg p-4 space-y-2">
               <h4 className="font-semibold text-sm mb-3">Token Distribution</h4>
               <div className="flex justify-between text-sm">
@@ -409,8 +390,6 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
                 <p><strong>Target:</strong> {parseInt(formData.targetAmount).toLocaleString()} BNB</p>
                 <p><strong>Vesting Duration:</strong> {formData.vestingDuration} month{formData.vestingDuration !== 1 ? 's' : ''}</p>
                 <p><strong>Burn LP:</strong> {formData.burnLP ? 'Yes' : 'No'}</p>
-                <p><strong>InfoFi Wallet:</strong> {formData.infofiWallet || 'Not set'}</p>
-                <p><strong>Status:</strong> {success ? "Submitted" : "Awaiting approval"}</p>
                 {txHash && (
                   <p>
                     <strong>Transaction:</strong>{" "}
@@ -432,7 +411,7 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
                 Back
               </Button>
               <Button onClick={handleSubmit} className="w-full controller-btn" disabled={submitting || isInitializing}>
-                {submitting ? "Submitting..." : "Submit for Approval"}
+                {submitting ? "Launching..." : "Launch Project Raise"}
               </Button>
             </div>
           </div>

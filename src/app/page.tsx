@@ -15,15 +15,13 @@ import { TokensLoadingAnimation } from "@/components/TokensLoadingAnimation";
 
 export default function Home() {
   const [search, setSearch] = useState("");
+  const [filterBy, setFilterBy] = useState("all");
+  const [sortBy, setSortBy] = useState("newest");
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [contributeToken, setContributeToken] = useState<Token | null>(null);
   const { sdk } = useSafuPadSDK();
   const [liveTokens, setLiveTokens] = useState<Token[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<"newest" | "marketCap" | "progress" | "endingSoon">("newest");
-  const [filterBy, setFilterBy] = useState<
-    "all" | "project" | "instant" | "activeRaises" | "trading" | "graduated"
-  >("all");
-  const [contributeToken, setContributeToken] = useState<Token | null>(null);
 
   const handleContribute = (token: Token) => {
     console.log('handleContribute called with token:', token.id, token.name);
@@ -64,7 +62,7 @@ export default function Home() {
               
               // ✅ FIX: Use correct field name 'logoURI' not 'logo'
               const logoURI = tokenMeta.logoURI || 
-                "https://images.unsplash.com/photo-1614064641938-3bbee52942c1?w=400&h=400&fit=crop";
+                "https://www.rmg.co.uk/sites/default/files/styles/full_width_1440/public/Color-Full%20Moon%20%C2%A9%20Nicolas%20Lefaudeux.jpg.webp?itok=ghLyCuO0";
 
               // B. Launch Information - Use correct SDK method
               const launchInfo = await sdk.launchpad.getLaunchInfoWithUSD(addr);
@@ -72,10 +70,10 @@ export default function Home() {
               // C. Pool Information - Use correct SDK method
               const poolInfo = await sdk.bondingDex.getPoolInfo(addr);
               
-              // ✅ Get creator fee information using sdk.bonding.getCreatorFeeInfo()
+              // ✅ Get creator fee information using sdk.bondingDex.getCreatorFeeInfo()
               let creatorFeeInfo = null;
               try {
-                creatorFeeInfo = await sdk.bonding.getCreatorFeeInfo(addr);
+                creatorFeeInfo = await sdk.bondingDex.getCreatorFeeInfo(addr);
                 console.log(`Creator fee info for ${tokenInfo.name}:`, creatorFeeInfo);
               } catch (err) {
                 console.warn(`Could not fetch creator fee info for ${addr}:`, err);
@@ -127,11 +125,17 @@ export default function Home() {
               let recentTradesCount = 0;
               let holderCount = 0;
 
+                
+            
               try {
                 // Get 24h volume
                 const volume24hData = await sdk.bondingDex.get24hVolume(addr);
-                const volume24hBNB = Number(ethers.formatEther(volume24hData.totalVolumeBNB));
-                volume24h = await sdk.priceOracle.bnbToUSD(volume24hBNB);
+                console.log(volume24hData)
+                console.log(volume24hData)
+                const volume24hBNB = volume24hData.totalVolumeBNB;
+                const volume24hBNBFormatted = sdk.bondingDex.formatBNBAmount(volume24hBNB);
+                const vol = await sdk.priceOracle.bnbToUSD(Number(volume24hBNB));
+                volume24h = ethers.formatUnits(Number(vol).toString(), 18);
                 
                 // Get total volume
                 const totalVolumeData = await sdk.bondingDex.getTotalVolume(addr);

@@ -17,6 +17,7 @@ import Link from "next/link";
 import { useSafuPadSDK } from "@/lib/safupad-sdk";
 import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
+import { ethers } from "ethers";
 
 interface TokenCardProps {
   token: Token;
@@ -26,26 +27,27 @@ interface TokenCardProps {
 export function TokenCard({ token, onContribute }: TokenCardProps) {
   const { sdk } = useSafuPadSDK();
   const { address: userAddress } = useAccount();
-  const [marketCapBnb, setMarketCapBnb] = useState<string>("0");
-  const [targetCapBnb, setTargetCapBnb] = useState<string>("0");
+  const [bnbReserve, setBnbReserve] = useState<number>(0);
   
   const isProjectRaise = token.launchType === "project-raise";
   const isGraduated = token.graduated;
 
-  // Convert USD to BNB for instant launch cards
+  // Fetch BNB reserve for graduation progress
   useEffect(() => {
-    if (!isProjectRaise && !isGraduated && sdk) {
-      const convertToBnb = async () => {
-        try {
-          setMarketCapBnb(formatCurrency(token.marketCap));
-          setTargetCapBnb(formatCurrency(90000));
-        } catch (error) {
-          console.error("Error converting USD to BNB:", error);
-        }
-      };
-      void convertToBnb();
-    }
-  }, [sdk, token.marketCap, isProjectRaise, isGraduated]);
+    const fetchPoolInfo = async () => {
+      if (!sdk || isGraduated) return;
+      
+      try {
+        const poolInfo = await sdk.bondingDex.getPoolInfo(token.id);
+        const reserve = Number(ethers.formatEther(poolInfo.bnbReserve));
+        setBnbReserve(reserve);
+      } catch (error) {
+        console.error("Error fetching pool info:", error);
+      }
+    };
+
+    void fetchPoolInfo();
+  }, [sdk, token.id, isGraduated]);
 
   // Derive display status per spec
   const displayStatus = (() => {
@@ -162,39 +164,22 @@ export function TokenCard({ token, onContribute }: TokenCardProps) {
           </div>
         )}
 
-        {/* Instant Launch Progress */}
-        {!isProjectRaise && token.instantLaunch && !isGraduated && (
+        {/* Graduation Progress - For both Project Raise and Instant Launch */}
+        {!isGraduated && !isRaising && (
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">Graduation Progress</span>
               <span className="font-medium">
-                {(token.instantLaunch as any)?.graduationProgress?.toFixed?.(0) ?? 0}% toward PancakeSwap
-              </span>
-            </div> 
-            <Progress 
-              value={Number((token.instantLaunch as any)?.graduationProgress ?? 0)} 
-              className="h-2"
-            />
-            <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">Price Multiplier</span>
-              <span className="font-medium">{Number(((token.instantLaunch as any)?.priceMultiplier ?? 100) / 100).toFixed(2)}x</span>
-            </div>
-          </div>
-        )}
-
-        {/* Graduation Status to 90K Cap */}
-        {!isProjectRaise && !isGraduated && (
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">To 90K Cap</span>
-              <span className="font-medium">
-                {marketCapBnb} USD / {targetCapBnb} USD
+                {bnbReserve.toFixed(4)} BNB / 15 BNB
               </span>
             </div>
             <Progress 
-              value={getProgressPercentage(token.marketCap, 90000)} 
+              value={getProgressPercentage(bnbReserve, 15)} 
               className="h-2"
             />
+            <p className="text-xs text-muted-foreground">
+              Pool must reach 15 BNB to graduate to PancakeSwap
+            </p>
           </div>
         )}
 
