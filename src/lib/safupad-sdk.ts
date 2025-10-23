@@ -3,12 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { SafuPadSDK } from "@safupad/sdk";
 import { ethers } from "ethers";
-
-declare global {
-  interface Window {
-    ethereum?: any;
-  }
-}
+import { useWalletClient } from "wagmi";
 
 export type UseSafuPadSDKResult = {
   sdk: SafuPadSDK | null;
@@ -19,50 +14,49 @@ export type UseSafuPadSDKResult = {
 
 /**
  * Gets the appropriate provider for BSC Testnet (chainId 97)
- * Falls back to JsonRpcProvider if window.ethereum is not on the correct network
+ * Falls back to JsonRpcProvider if wallet is not connected
  */
-async function getBscTestnetProvider() {
+async function getBscTestnetProvider(walletClient?: any) {
   // BSC Testnet RPC endpoint
-  const BSC_TESTNET_RPC = "https://data-seed-prebsc-1-s1.binance.org:8545/";
+  const BSC_TESTNET_RPC = "https://bnb-testnet.g.alchemy.com/v2/tTuJSEMHVlxyDXueE8Hjv";
   
-  if (window.ethereum) {
+  // If wallet is connected, use it
+  if (walletClient) {
     try {
-      // Check current chainId
-      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-      const chainIdDecimal = parseInt(chainId, 16);
-      
-      console.log(`🔧 SafuPad SDK: Detected chainId: ${chainIdDecimal}`);
-      
-      if (chainIdDecimal === 97) {
-        console.log("✅ SafuPad SDK: Using window.ethereum (already on BSC Testnet)");
-        return window.ethereum;
-      } else {
-        console.log(`⚠️ SafuPad SDK: Wrong network (chainId ${chainIdDecimal}), falling back to JsonRpcProvider`);
-      }
+      console.log("✅ SafuPad SDK: Using connected wallet provider");
+      return walletClient;
     } catch (err) {
-      console.warn("⚠️ SafuPad SDK: Could not detect chainId, falling back to JsonRpcProvider", err);
+      console.warn("⚠️ SafuPad SDK: Could not use wallet provider, using RPC fallback", err);
     }
   }
   
-  // Fallback to JsonRpcProvider for BSC Testnet
-  console.log("🔧 SafuPad SDK: Using JsonRpcProvider for BSC Testnet");
+  // Fallback to JsonRpcProvider for BSC Testnet (read-only)
+  console.log("🔧 SafuPad SDK: Using JsonRpcProvider for BSC Testnet (read-only mode)");
   return new ethers.JsonRpcProvider(BSC_TESTNET_RPC);
 }
 
 /**
  * useSafuPadSDK
- * - Initializes a singleton SafuPadSDK instance using the injected wallet provider
+ * - Initializes SafuPadSDK instance synchronized with RainbowKit wallet connection
  * - Network is locked to BSC Testnet
- * - Falls back to JsonRpcProvider if wallet is on wrong network
+ * - Falls back to JsonRpcProvider for read-only operations when wallet is disconnected
  */
 export function useSafuPadSDK(): UseSafuPadSDKResult {
   const [sdk, setSdk] = useState<SafuPadSDK | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
   const [error, setError] = useState<unknown | null>(null);
   const initAttempted = useRef(false);
+  
+  // Get wallet client from wagmi (connected wallet)
+  const { data: walletClient } = useWalletClient();
 
   useEffect(() => {
-    // Prevent double initialization in strict mode
+    // Reset initialization flag when wallet connection changes
+    initAttempted.current = false;
+  }, [walletClient]);
+
+  useEffect(() => {
+    // Prevent double initialization
     if (initAttempted.current) return;
     initAttempted.current = true;
 
@@ -76,7 +70,7 @@ export function useSafuPadSDK(): UseSafuPadSDKResult {
 
       try {
         console.log("🔧 SafuPad SDK: Getting BSC Testnet provider...");
-        const provider = await getBscTestnetProvider();
+        const provider = await getBscTestnetProvider(walletClient);
         
         console.log("🔧 SafuPad SDK: Creating SDK instance with bscTestnet...");
         
@@ -116,19 +110,29 @@ export function useSafuPadSDK(): UseSafuPadSDKResult {
     }
 
     init();
-  }, []); // Empty deps - only run once
+
+    return () => {
+      cancelled = true;
+    };
+  }, [walletClient]); // Re-initialize when wallet connection changes
 
   const connect = async () => {
-    console.log("🔗 SafuPad SDK: Attempting to connect wallet...");
+    console.log("🔗 SafuPad SDK: Connect called");
     
+    if (!walletClient) {
+      console.warn("⚠️ SafuPad SDK: No wallet connected. Please connect via RainbowKit first.");
+      return null;
+    }
+
     if (!sdk) {
       console.error("❌ SafuPad SDK: Cannot connect - SDK not initialized");
       return null;
     }
 
     try {
-      const address = await sdk.connect();
-      console.log("✅ SafuPad SDK: Connected to address:", address);
+      // SDK should already be connected via walletClient
+      const address = walletClient.account?.address;
+      console.log("✅ SafuPad SDK: Using connected address:", address);
       return address ?? null;
     } catch (e: any) {
       console.error("❌ SafuPad SDK: Connection failed:", e);

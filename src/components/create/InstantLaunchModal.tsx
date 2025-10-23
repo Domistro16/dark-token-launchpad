@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Info, Zap } from "lucide-react";
+import { Info, Zap, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { useSafuPadSDK } from "@/lib/safupad-sdk";
 
 interface InstantLaunchModalProps {
@@ -38,6 +38,74 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
+  
+  // Image validation state
+  const [imageValidating, setImageValidating] = useState(false);
+  const [imageValid, setImageValid] = useState<boolean | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+
+  // Validate image URL
+  const validateImage = (url: string) => {
+    if (!url.trim()) {
+      setImageValid(null);
+      setImageError(null);
+      return;
+    }
+
+    // Check if URL is valid format
+    try {
+      new URL(url);
+    } catch {
+      setImageValid(false);
+      setImageError("Invalid URL format");
+      return;
+    }
+
+    // Check if URL starts with http/https
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      setImageValid(false);
+      setImageError("URL must start with http:// or https://");
+      return;
+    }
+
+    setImageValidating(true);
+    setImageError(null);
+    setImageValid(null);
+
+    // Create an image element to test if the URL is a valid image
+    const img = new Image();
+    
+    img.onload = () => {
+      setImageValidating(false);
+      setImageValid(true);
+      setImageError(null);
+    };
+    
+    img.onerror = () => {
+      setImageValidating(false);
+      setImageValid(false);
+      setImageError("Unable to load image. Please check the URL.");
+    };
+    
+    // Add timeout for slow loading images
+    const timeout = setTimeout(() => {
+      if (imageValidating) {
+        setImageValidating(false);
+        setImageValid(false);
+        setImageError("Image loading timeout. Please check the URL.");
+      }
+    }, 10000); // 10 second timeout
+    
+    img.src = url;
+    
+    // Cleanup
+    return () => clearTimeout(timeout);
+  };
+
+  const handleImageUrlChange = (url: string) => {
+    setFormData({ ...formData, imageUrl: url });
+    validateImage(url);
+  };
 
   const handleSubmit = async () => {
     setSubmitError(null);
@@ -50,6 +118,17 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
     }
     if (formData.initialBuy === "" || Number(formData.initialBuy) < 0) {
       setSubmitError("Initial buy cannot be negative.");
+      return;
+    }
+    
+    // Image validation
+    if (formData.imageUrl && imageValid === false) {
+      setSubmitError("Please provide a valid image URL or leave it empty.");
+      return;
+    }
+    
+    if (formData.imageUrl && imageValidating) {
+      setSubmitError("Please wait for image validation to complete.");
       return;
     }
 
@@ -204,17 +283,49 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
 
           <div className="space-y-2">
             <Label htmlFor="imageUrl">Token Image URL</Label>
-            <Input
-              id="imageUrl"
-              type="url"
-              placeholder="https://example.com/token-image.png"
-              value={formData.imageUrl}
-              onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-              disabled={submitting} />
-
-            <p className="text-xs text-muted-foreground">
-              Direct link to your token's image (PNG, JPG, GIF)
-            </p>
+            <div className="relative">
+              <Input
+                id="imageUrl"
+                type="url"
+                placeholder="https://example.com/token-image.png"
+                value={formData.imageUrl}
+                onChange={(e) => handleImageUrlChange(e.target.value)}
+                disabled={submitting}
+                className={
+                  formData.imageUrl && imageValid === false
+                    ? "border-destructive"
+                    : formData.imageUrl && imageValid === true
+                    ? "border-green-500"
+                    : ""
+                } />
+              {imageValidating && (
+                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
+              )}
+              {!imageValidating && imageValid === true && (
+                <CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-500" />
+              )}
+              {!imageValidating && imageValid === false && (
+                <XCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-destructive" />
+              )}
+            </div>
+            {imageError && (
+              <p className="text-xs text-destructive">{imageError}</p>
+            )}
+            {!imageError && (
+              <p className="text-xs text-muted-foreground">
+                Direct link to your token's image (PNG, JPG, GIF)
+              </p>
+            )}
+            {imageValid === true && formData.imageUrl && (
+              <div className="mt-2 flex items-center gap-2">
+                <img
+                  src={formData.imageUrl}
+                  alt="Token preview"
+                  className="w-16 h-16 rounded-lg object-cover border border-border"
+                />
+                <span className="text-xs text-green-500">Image verified ✓</span>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -302,7 +413,12 @@ export function InstantLaunchModal({ isOpen, onClose }: InstantLaunchModalProps)
             </div>
           </div>
 
-          <Button onClick={handleSubmit} className="w-full controller-btn" size="lg" disabled={submitting || isInitializing}>
+          <Button 
+            onClick={handleSubmit} 
+            className="w-full controller-btn" 
+            size="lg" 
+            disabled={submitting || isInitializing || imageValidating || (formData.imageUrl && imageValid !== true)}
+          >
             <Zap className="w-4 h-4 mr-2" />
             {submitting ? "Creating..." : "Create & Launch Now"}
           </Button>

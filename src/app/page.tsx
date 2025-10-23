@@ -70,6 +70,15 @@ export default function Home() {
               // C. Pool Information - Use correct SDK method
               const poolInfo = await sdk.bondingDex.getPoolInfo(addr);
               
+              // D. Get Vesting Information using sdk.launchpad.getLaunchVesting()
+              let vestingData = null;
+              try {
+                vestingData = await sdk.launchpad.getLaunchVesting(addr);
+                console.log(`Vesting info for ${tokenName}:`, vestingData);
+              } catch (err) {
+                console.warn(`Could not fetch vesting info for ${addr}:`, err);
+              }
+              
               // ✅ Get creator fee information using sdk.bondingDex.getCreatorFeeInfo()
               let creatorFeeInfo = null;
               try {
@@ -90,11 +99,28 @@ export default function Home() {
               const totalRaisedUSD = Number(ethers.formatEther(launchInfo.totalRaisedUSD));
               const raiseMaxUSD = Number(ethers.formatEther(launchInfo.raiseMaxUSD));
               const marketCapUSD = Number(ethers.formatEther(poolInfo.marketCapUSD));
-              const currentPrice = Number(ethers.formatEther(poolInfo.currentPrice));
+              const currentPrice = Number(ethers.formatEther(await sdk.priceOracle.bnbToUSD(poolInfo.currentPrice)));
               const graduationProgress = Number(poolInfo.graduationProgress);
               const priceMultiplier = Number(poolInfo.priceMultiplier);
               const raiseCompleted = Boolean(launchInfo.raiseCompleted);
               const graduated = Boolean(poolInfo.graduated);
+              
+              // Parse vesting data if available
+              const startMarketCap = vestingData
+                ? Number(ethers.formatEther(vestingData.startMarketCap))
+                : 0;
+              const vestingDuration = vestingData?.vestingDuration
+                ? Number(vestingData.vestingDuration)
+                : 0;
+              const vestingStartTime = vestingData?.vestingStartTime
+                ? new Date(Number(vestingData.vestingStartTime) * 1000)
+                : null;
+              const founderTokens = vestingData
+                ? Number(ethers.formatEther(vestingData.founderTokens))
+                : 0;
+              const founderTokensClaimed = vestingData
+                ? Number(ethers.formatEther(vestingData.founderTokensClaimed))
+                : 0;
               
               // Parse creator fee info if available
               const accumulatedFees = creatorFeeInfo 
@@ -124,22 +150,23 @@ export default function Home() {
               let totalVolumeBNB = 0;
               let recentTradesCount = 0;
               let holderCount = 0;
-
+              let transactionCount = 0;
+              let priceChange24h = 0;
                 
             
               try {
                 // Get 24h volume
                 const volume24hData = await sdk.bondingDex.get24hVolume(addr);
-                console.log(volume24hData)
-                console.log(volume24hData)
-                const volume24hBNB = volume24hData.totalVolumeBNB;
-                const volume24hBNBFormatted = sdk.bondingDex.formatBNBAmount(volume24hBNB);
+                const volume24hBNB = volume24hData.volumeBNB;
+             
                 const vol = await sdk.priceOracle.bnbToUSD(Number(volume24hBNB));
                 volume24h = ethers.formatUnits(Number(vol).toString(), 18);
                 
                 // Get total volume
                 const totalVolumeData = await sdk.bondingDex.getTotalVolume(addr);
                 totalVolumeBNB = Number(ethers.formatEther(totalVolumeData.totalVolumeBNB));
+
+                transactionCount = totalVolumeData.buyCount + totalVolumeData.sellCount;
                 
                 // Get recent trades
                 const recentTrades = await sdk.bondingDex.getRecentTrades(addr);
@@ -148,11 +175,21 @@ export default function Home() {
                 // Get holder count
                 holderCount = await sdk.bondingDex.getEstimatedHolderCount(addr);
                 
+                // Get 24h price change
+                try {
+                  const priceChangeData = await sdk.bondingDex.get24hPriceChange(addr);
+                  priceChange24h = priceChangeData.priceChangePercent;
+                  console.log(`Price change for ${tokenName}: ${priceChange24h}%`);
+                } catch (error) {
+                  console.warn(`Could not fetch price change data for ${addr}:`, error);
+                }
+                
                 console.log(`Volume data for ${tokenName}:`, {
                   volume24h,
                   totalVolumeBNB,
                   recentTradesCount,
                   holderCount,
+                  priceChange24h,
                   volume24hData,
                   totalVolumeData
                 });
@@ -185,7 +222,7 @@ export default function Home() {
                 marketCap: marketCapUSD,
                 liquidityPool: Number(poolInfo.bnbReserve),
                 volume24h,
-                priceChange24h: 0,
+                priceChange24h: priceChange24h,
 
                 // Project Raise
                 projectRaise: isProjectRaise ? {
@@ -205,8 +242,20 @@ export default function Home() {
                   targetAmount: raiseMaxUSD || 0,
                   startTime: new Date(Date.now() - 60_000),
                   endTime: raiseDeadline,
-                  vestingSchedule: { totalAmount: 0, releasedAmount: 0, schedule: [] },
+                  vestingSchedule: { 
+                    totalAmount: founderTokens, 
+                    releasedAmount: founderTokensClaimed, 
+                    schedule: [] 
+                  },
                   approved: true,
+                  // Vesting data from SDK
+                  vestingData: vestingData ? {
+                    startMarketCap,
+                    vestingDuration,
+                    vestingStartTime,
+                    founderTokens,
+                    founderTokensClaimed,
+                  } : undefined,
                 } : undefined,
 
                 // Instant Launch
@@ -232,7 +281,7 @@ export default function Home() {
                 // Graduation
                 graduated,
                 graduationDate: graduated ? new Date() : undefined,
-                startingMarketCap: 0,
+                startingMarketCap: startMarketCap,
 
                 // Social - Use correct field names
                 twitter: tokenMeta.twitter,
@@ -241,7 +290,7 @@ export default function Home() {
 
                 // Stats - Updated with SDK data
                 holders: holderCount,
-                transactions: recentTradesCount,
+                transactions: transactionCount,
                 
                 // Keep index for sorting
                 __index: idx,

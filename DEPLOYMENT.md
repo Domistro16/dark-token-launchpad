@@ -31,7 +31,7 @@ module.exports = {
   solidity: "0.8.20",
   networks: {
     bscTestnet: {
-      url: "https://data-seed-prebsc-1-s1.binance.org:8545",
+      url: "https://bnb-testnet.g.alchemy.com/v2/tTuJSEMHVlxyDXueE8Hjv",
       accounts: [process.env.PRIVATE_KEY],
       chainId: 97,
     },

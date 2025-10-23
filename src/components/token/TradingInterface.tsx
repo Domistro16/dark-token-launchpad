@@ -1,21 +1,44 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Token } from "@/types/token";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowDownUp, TrendingUp, TrendingDown, Loader2 } from "lucide-react";
+import { ArrowDownUp, TrendingUp, TrendingDown, Loader2, Settings, ChevronDown } from "lucide-react";
 import { formatCurrency, formatPrice } from "@/lib/utils/format";
 import { useSafuPadSDK } from "@/lib/safupad-sdk";
 import { ethers } from "ethers";
 import { toast } from "sonner";
+import { useBalance, useAccount } from 'wagmi'
 
 interface TradingInterfaceProps {
   token: Token;
 }
+
+const abi = [
+   {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        }
+      ],
+      "name": "balanceOf",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+]
 
 export function TradingInterface({ token }: TradingInterfaceProps) {
   const { sdk } = useSafuPadSDK();
@@ -23,6 +46,64 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
   const [amount, setAmount] = useState("");
   const [bnbAmount, setBnbAmount] = useState("");
   const [isTrading, setIsTrading] = useState(false);
+  const [bnbBalance, setBnbBalance] = useState<string | null>(null);
+  const [tokenBalance, setTokenBalance] = useState<string | null>(null);
+  const [loadingBalances, setLoadingBalances] = useState(true);
+  const [slippage, setSlippage] = useState("0.5");
+  const {address} = useAccount()
+  const [showSlippageSettings, setShowSlippageSettings] = useState(false);
+
+  const provider = new ethers.JsonRpcProvider("https://bnb-testnet.g.alchemy.com/v2/tTuJSEMHVlxyDXueE8Hjv");
+  const tokenCon = new ethers.Contract(token.contractAddress, abi, provider);
+  // Fetch balances
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchBalances = async () => {
+      if (!sdk) {
+        setLoadingBalances(true);
+        return;
+      }
+
+      try {
+        setLoadingBalances(true);
+
+        // Get connected wallet address
+    
+        // Fetch BNB balance
+        const bnbBal = await provider.getBalance(address);
+        if (!cancelled) {
+          setBnbBalance(ethers.formatEther(bnbBal));
+        }
+
+        // Fetch token balance
+        const tokenBal = await tokenCon.balanceOf(address);
+        if (!cancelled) {
+          setTokenBalance(ethers.formatEther(tokenBal));
+        }
+      } catch (error) {
+        console.error("Error fetching balances:", error);
+        if (!cancelled) {
+          setBnbBalance("0");
+          setTokenBalance("0");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingBalances(false);
+        }
+      }
+    };
+
+    fetchBalances();
+
+    // Refresh balances every 10 seconds
+    const interval = setInterval(fetchBalances, 10000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [sdk, token.contractAddress, address]);
 
   const handleTrade = async () => {
     if (!amount || parseFloat(amount) <= 0) {
@@ -56,7 +137,12 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
       setAmount("");
       setBnbAmount("");
       
-      // Optionally reload token data here
+      // Refresh balances after trade
+      const address = await sdk.getAddress();
+      const bnbBal = await sdk.getBNBBalance(address);
+      setBnbBalance(ethers.formatEther(bnbBal));
+      const tokenBal = await sdk.tokenFactory.getBalance(token.contractAddress, address);
+      setTokenBalance(ethers.formatEther(tokenBal));
       
     } catch (error: any) {
       console.error("Trade error:", error);
@@ -88,8 +174,75 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
     setAmount(calculateTokens(value));
   };
 
+  const formatBalance = (balance: string | null, loading: boolean) => {
+    if (loading) return "Loading...";
+    if (balance === null) return "0.00";
+    const num = parseFloat(balance);
+    return num.toFixed(4);
+  };
+
   return (
     <Card className="p-6 sticky top-24">
+      {/* Compact Slippage Settings */}
+      <div className="mb-4">
+        <button
+          onClick={() => setShowSlippageSettings(!showSlippageSettings)}
+          className="w-full flex items-center justify-between p-3 bg-card/50 hover:bg-card/70 border-2 border-primary/20 hover:border-primary/40 rounded-lg transition-all group"
+        >
+          <div className="flex items-center gap-2">
+            <Settings className="w-4 h-4 text-primary" />
+            <span className="text-sm font-bold text-foreground/90">SLIPPAGE</span>
+            <span className="text-xs px-2 py-0.5 bg-primary/20 text-primary border border-primary/30 rounded font-mono font-bold">
+              {slippage}%
+            </span>
+          </div>
+          <ChevronDown 
+            className={`w-4 h-4 text-muted-foreground transition-transform ${showSlippageSettings ? 'rotate-180' : ''}`}
+          />
+        </button>
+
+        {showSlippageSettings && (
+          <div className="mt-2 p-4 bg-gradient-to-br from-card/80 to-card/60 border-2 border-primary/30 rounded-lg space-y-3 glow-effect">
+            <div className="grid grid-cols-4 gap-2">
+              {["0.1", "0.5", "1.0", "2.0"].map((val) => (
+                <button
+                  key={val}
+                  onClick={() => setSlippage(val)}
+                  className={`
+                    px-3 py-2 text-xs font-black rounded border-2 transition-all
+                    ${slippage === val 
+                      ? 'bg-primary text-primary-foreground border-primary shadow-[0_0_12px_rgba(255,176,0,0.5)]' 
+                      : 'bg-card/30 text-foreground/70 border-primary/20 hover:border-primary/40 hover:bg-card/50'
+                    }
+                  `}
+                >
+                  {val}%
+                </button>
+              ))}
+            </div>
+            
+            <div className="relative">
+              <Input
+                id="slippage"
+                type="number"
+                placeholder="Custom %"
+                value={slippage}
+                onChange={(e) => setSlippage(e.target.value)}
+                step="0.1"
+                min="0.1"
+                max="50"
+                className="pr-10 text-center font-mono font-bold bg-background/50 border-primary/30"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-primary">%</span>
+            </div>
+            
+            <p className="text-[10px] text-muted-foreground leading-tight">
+              ⚠️ Transaction reverts if price moves unfavorably beyond this threshold
+            </p>
+          </div>
+        )}
+      </div>
+
       <Tabs value={tradeType} onValueChange={(v) => setTradeType(v as "buy" | "sell")}>
         <TabsList className="grid w-full grid-cols-2 mb-6">
           <TabsTrigger value="buy" className="data-[state=active]:bg-green-500/20">
@@ -114,7 +267,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
               disabled={isTrading}
             />
             <p className="text-xs text-muted-foreground">
-              Balance: 1.5 BNB
+              Balance: {formatBalance(bnbBalance, loadingBalances)} BNB
             </p>
           </div>
 
@@ -135,7 +288,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
               disabled={isTrading}
             />
             <p className="text-xs text-muted-foreground">
-              Balance: 0 {token.symbol}
+              Balance: {formatBalance(tokenBalance, loadingBalances)} {token.symbol}
             </p>
           </div>
 
@@ -152,7 +305,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Slippage</span>
-              <span className="font-medium">0.5%</span>
+              <span className="font-medium">{slippage}%</span>
             </div>
           </div>
 
@@ -185,7 +338,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
               disabled={isTrading}
             />
             <p className="text-xs text-muted-foreground">
-              Balance: 0 {token.symbol}
+              Balance: {formatBalance(tokenBalance, loadingBalances)} {token.symbol}
             </p>
           </div>
 
@@ -206,7 +359,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
               disabled={isTrading}
             />
             <p className="text-xs text-muted-foreground">
-              Balance: 1.5 BNB
+              Balance: {formatBalance(bnbBalance, loadingBalances)} BNB
             </p>
           </div>
 
@@ -223,7 +376,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Slippage</span>
-              <span className="font-medium">0.5%</span>
+              <span className="font-medium">{slippage}%</span>
             </div>
           </div>
 

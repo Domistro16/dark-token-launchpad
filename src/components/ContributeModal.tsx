@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { formatCurrency, getProgressPercentage } from "@/lib/utils/format";
+import { getProgressPercentage } from "@/lib/utils/format";
 import { useSafuPadSDK } from "@/lib/safupad-sdk";
 import { Zap, TrendingUp, Info } from "lucide-react";
 import {ethers} from 'ethers'
@@ -31,26 +31,97 @@ export function ContributeModal({ token, isOpen, onClose }: ContributeModalProps
   const [isContributing, setIsContributing] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [bnbRaised, setBnbRaised] = useState<number>(0);
+  const [bnbTarget, setBnbTarget] = useState<number>(0);
   
   // Early return if no token
   if (!token) return null;
   
   const isProjectRaise = token.launchType === "project-raise";
   
+  // Convert USD values to BNB for display
+  const loadBnbValues = async () => {
+    if (!sdk || !token.projectRaise) return;
+    
+    try {
+      const raisedBNB = await sdk.priceOracle.usdToBNB(
+        ethers.parseEther(token.projectRaise.raisedAmount.toString())
+      );
+      const targetBNB = await sdk.priceOracle.usdToBNB(
+        ethers.parseEther(token.projectRaise.targetAmount.toString())
+      );
+      
+      setBnbRaised(Number(ethers.formatEther(raisedBNB)));
+      setBnbTarget(Number(ethers.formatEther(targetBNB)));
+    } catch (error) {
+      console.error("Error converting to BNB:", error);
+    }
+  };
+  
+  // Load BNB values when modal opens
+  if (isOpen && sdk && bnbTarget === 0) {
+    void loadBnbValues();
+  }
+  
   // Calculate raise progress percentage
   const raiseProgress = isProjectRaise && token.projectRaise 
     ? getProgressPercentage(token.projectRaise.raisedAmount, token.projectRaise.targetAmount)
     : 0;
+async function simulateContribution(tokenAddress: string, bnbAmount: string, sdk: any) {
+  try {
+    const signer = await sdk.provider.getSigner();
+    const signerAddress = await signer.getAddress();
+    
+    // Encode the function call
+   const iface = new ethers.Interface([
+      'function contribute(address token) payable'
+    ]);
+    const data = iface.encodeFunctionData('contribute', [token.id]);
+    
+    // Simulate with eth_call
+    console.log('🔍 Simulating transaction...');
+    const result = await sdk.provider.call({
+      from: signerAddress,
+      to: sdk.launchpad.address,
+      data: data,
+      value: ethers.parseEther(bnbAmount)
+    });
+    
+    console.log('✅ Simulation successful!', result);
+    return true;
+    
+  } catch (error: any) {
+    console.log('❌ Simulation failed!');
+    console.log('Error:', error);
+    
+    // Try to decode the error
+    if (error.data) {
+      console.log('Error data:', error.data);
+      
+      // Try to decode as a string
+      try {
+        const reason = ethers.toUtf8String('0x' + error.data.slice(138));
+        console.log('Decoded reason:', reason);
+      } catch {}
+    }
+    
+    return false;
+  }
+}
+
 
   const handleContribute = async () => {
     setSubmitError(null);
     setTxHash(null);
 
-    const amountUSD = Number(contribution);
-    if (!amountUSD || amountUSD <= 0) {
+    const amountBNB = Number(contribution);
+    if (!amountBNB || amountBNB <= 0) {
       setSubmitError("Please enter a valid amount greater than 0.");
       return;
     }
+
+    // Usage
+
 
     if (!sdk) {
       setSubmitError("SDK not ready. Please ensure your wallet is connected.");
@@ -60,11 +131,27 @@ export function ContributeModal({ token, isOpen, onClose }: ContributeModalProps
     try {
       setIsContributing(true);
       
-      // Convert USD to BNB using the SDK's price oracle
-      const amountBNB = await sdk.priceOracle.usdToBNB(ethers.parseEther(amountUSD.toString()));
-      
-      // Pass the BNB amount to the contribute method
-      const tx = await sdk.launchpad.contribute(token.id, ethers.formatUnits(amountBNB.toString(), 18));
+      // Contribute directly with BNB amount
+      await simulateContribution(token.id, amountBNB.toString(), sdk);
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner()
+      const iface = new ethers.Interface([
+      'function contribute(address token) payable'
+    ]);
+      const launchpad = new ethers.Contract(sdk.launchpad.address, [{
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "contribute",
+      "outputs": [],
+      "stateMutability": "payable",
+      "type": "function"
+    },], signer)
+      const tx = await launchpad.contribute(token.id, {value: ethers.parseEther(amountBNB.toString())});
       setTxHash(tx.hash);
       await tx.wait();
       onClose();
@@ -128,19 +215,21 @@ export function ContributeModal({ token, isOpen, onClose }: ContributeModalProps
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="contribution">Contribution Amount (USD)</Label>
+            <Label htmlFor="contribution">Contribution Amount (BNB)</Label>
             <Input
               id="contribution"
               type="number"
               inputMode="decimal"
-              placeholder="Enter amount"
+              placeholder="Enter BNB amount"
               value={contribution}
               onChange={(e) => setContribution(e.target.value)}
               className="bg-card/60 border-primary/30"
               disabled={isContributing}
+              step="0.01"
+              min="0.01"
             />
             <p className="text-xs text-muted-foreground">
-              Minimum contribution: $10 USD
+              Minimum contribution: 0.01 BNB
             </p>
           </div>
 
@@ -155,13 +244,13 @@ export function ContributeModal({ token, isOpen, onClose }: ContributeModalProps
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Current:</span>
                   <span className="font-medium">
-                    {formatCurrency(token.projectRaise.raisedAmount)}
+                    {bnbRaised.toFixed(4)} BNB
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Target:</span>
                   <span className="font-medium">
-                    {formatCurrency(token.projectRaise.targetAmount)}
+                    {bnbTarget.toFixed(4)} BNB
                   </span>
                 </div>
                 <Progress 
@@ -182,7 +271,7 @@ export function ContributeModal({ token, isOpen, onClose }: ContributeModalProps
             </div>
             <div className="text-sm space-y-1">
               <p><strong>Token:</strong> {token.name} ({token.symbol})</p>
-              <p><strong>Amount:</strong> {contribution || "0"} USD</p>
+              <p><strong>Amount:</strong> {contribution || "0"} BNB</p>
               <p><strong>Type:</strong> <span className="text-primary">Project Raise</span></p>
             </div>
           </div>

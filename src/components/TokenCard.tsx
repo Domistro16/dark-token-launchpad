@@ -24,13 +24,49 @@ interface TokenCardProps {
   onContribute?: () => void;
 }
 
+// Generate a consistent gradient based on token ID/name
+function generateGradient(seed: string): string {
+  const colors = [
+    ['#FFB000', '#ff6b00'],
+    ['#ffd700', '#FFB000'],
+    ['#ff8c00', '#ff6b00'],
+    ['#FFB000', '#ffaa00'],
+    ['#ff6b00', '#ff0055'],
+    ['#ffd700', '#ff8c00'],
+  ];
+  
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+    hash = hash & hash;
+  }
+  
+  const index = Math.abs(hash) % colors.length;
+  const angle = (Math.abs(hash) % 360);
+  
+  return `linear-gradient(${angle}deg, ${colors[index][0]}, ${colors[index][1]})`;
+}
+
 export function TokenCard({ token, onContribute }: TokenCardProps) {
   const { sdk } = useSafuPadSDK();
   const { address: userAddress } = useAccount();
   const [bnbReserve, setBnbReserve] = useState<number>(0);
+  const [imageError, setImageError] = useState(false);
+  const [imageLoading, setImageLoading] = useState(true);
+  const [bnbRaised, setBnbRaised] = useState<number>(0);
+  const [bnbTarget, setBnbTarget] = useState<number>(0);
   
   const isProjectRaise = token.launchType === "project-raise";
   const isGraduated = token.graduated;
+
+  // Check if image URL is valid
+  const isValidImageUrl = token.image && 
+    (token.image.startsWith('http://') || 
+     token.image.startsWith('https://') || 
+     token.image.startsWith('/'));
+
+  const shouldShowGradient = !isValidImageUrl || imageError;
+  const gradient = generateGradient(token.id + token.symbol);
 
   // Fetch BNB reserve for graduation progress
   useEffect(() => {
@@ -48,6 +84,29 @@ export function TokenCard({ token, onContribute }: TokenCardProps) {
 
     void fetchPoolInfo();
   }, [sdk, token.id, isGraduated]);
+
+  // Convert USD raise values to BNB for Project Raise tokens
+  useEffect(() => {
+    const convertToBnb = async () => {
+      if (!sdk || !isProjectRaise || !token.projectRaise) return;
+      
+      try {
+        const raisedBNB = await sdk.priceOracle.usdToBNB(
+          ethers.parseEther(token.projectRaise.raisedAmount.toString())
+        );
+        const targetBNB = await sdk.priceOracle.usdToBNB(
+          ethers.parseEther(token.projectRaise.targetAmount.toString())
+        );
+        
+        setBnbRaised(Number(ethers.formatEther(raisedBNB)));
+        setBnbTarget(Number(ethers.formatEther(targetBNB)));
+      } catch (error) {
+        console.error("Error converting to BNB:", error);
+      }
+    };
+
+    void convertToBnb();
+  }, [sdk, isProjectRaise, token.projectRaise]);
 
   // Derive display status per spec
   const displayStatus = (() => {
@@ -67,21 +126,36 @@ export function TokenCard({ token, onContribute }: TokenCardProps) {
       {/* Header */}
       <div className="p-4 border-b border-border">
         <div className="flex items-start gap-3">
-          <Image
-            src={token.image}
-            alt={token.name}
-            width={56}
-            height={56}
-            className="rounded-full"
-          />
+          <Link href={`/token/${token.id}`} className="cursor-pointer">
+            {shouldShowGradient ? (
+              <div 
+                className="w-14 h-14 rounded-full flex items-center justify-center text-2xl font-black text-background/90 hover:scale-105 transition-transform"
+                style={{ background: gradient }}
+              >
+                {token.symbol.charAt(0).toUpperCase()}
+              </div>
+            ) : (
+              <Image
+                src={token.image}
+                alt={token.name}
+                width={56}
+                height={56}
+                className="rounded-full hover:scale-105 transition-transform"
+                onError={() => setImageError(true)}
+                onLoad={() => setImageLoading(false)}
+              />
+            )}
+          </Link>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="font-bold text-lg">{token.symbol}</h3>
-              <Badge variant={isGraduated ? "default" : token.status === "pending" ? "secondary" : "outline"}>
-                {displayStatus}
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground truncate">{token.name}</p>
+            <Link href={`/token/${token.id}`} className="cursor-pointer block">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="font-bold text-lg hover:text-primary transition-colors">{token.symbol}</h3>
+                <Badge variant={isGraduated ? "default" : token.status === "pending" ? "secondary" : "outline"}>
+                  {displayStatus}
+                </Badge>
+              </div>
+              <p className="text-sm text-muted-foreground truncate hover:text-accent transition-colors">{token.name}</p>
+            </Link>
             <div className="flex items-center gap-2 mt-1">
               <Badge variant="outline" className="text-xs">
                 {isProjectRaise ? "Project Raise" : "Instant Launch"}
@@ -143,12 +217,12 @@ export function TokenCard({ token, onContribute }: TokenCardProps) {
         )}
 
         {/* Project Raise Progress */}
-        {isProjectRaise && token.projectRaise && (
+        {isProjectRaise && token.projectRaise && isRaising && (
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">Raise Progress</span>
               <span className="font-medium">
-                {formatCurrency(token.projectRaise.raisedAmount)} / {formatCurrency(token.projectRaise.targetAmount)}
+                {bnbRaised.toFixed(4)} BNB / {bnbTarget.toFixed(4)} BNB
               </span>
             </div>
             <Progress 

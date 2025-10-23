@@ -141,6 +141,10 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
   const [actualBnbInPool, setActualBnbInPool] = useState<number>(0);
   const [virtualLiquidityUSD, setVirtualLiquidityUSD] = useState<number>(0);
   const [graduationBnb, setGraduationBnb] = useState<number>(0);
+  const [claimableAmounts, setClaimableAmounts] = useState<{
+    claimableTokens: number;
+    claimableFunds: number;
+  } | null>(null);
 
   // Fetch token data from SDK
   useEffect(() => {
@@ -170,15 +174,43 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
         // Fetch pool info
         const poolInfo = await sdk.bondingDex.getPoolInfo(id);
         const bond = sdk.bondingDex.getContract()
-        const provider = new ethers.JsonRpcProvider("https://data-seed-prebsc-1-s1.binance.org:8545");
+        const provider = new ethers.JsonRpcProvider("https://bnb-testnet.g.alchemy.com/v2/tTuJSEMHVlxyDXueE8Hjv");
         const bonding = new ethers.Contract(await bond.getAddress(), abi, provider);
-        console.log(bonding);
         const pool = await bonding.pools(id);
 
         // Parse launch type
         const launchTypeNum = Number(launchInfo.launchType);
         const isProjectRaise = launchTypeNum === 0;
         const isInstant = !isProjectRaise;
+
+        // Fetch vesting data for project raises
+        let vestingData = null;
+        if (isProjectRaise) {
+          try {
+            vestingData = await sdk.launchpad.getLaunchVesting(id);
+            console.log(`Vesting info for ${tokenName}:`, vestingData);
+          } catch (err) {
+            console.warn(`Could not fetch vesting info for ${id}:`, err);
+          }
+
+          // Fetch claimable amounts for project-raise tokens
+          try {
+            const claimable = await sdk.launchpad.getClaimableAmounts(id);
+            const parsedClaimable = {
+              claimableTokens: Number(ethers.formatEther(claimable.claimableTokens)),
+              claimableFunds: Number(ethers.formatEther(claimable.claimableFunds)),
+            };
+            if (!cancelled) {
+              setClaimableAmounts(parsedClaimable);
+            }
+            console.log('Claimable amounts:', parsedClaimable);
+          } catch (err) {
+            console.warn(`Could not fetch claimable amounts for ${id}:`, err);
+            if (!cancelled) {
+              setClaimableAmounts({ claimableTokens: 0, claimableFunds: 0 });
+            }
+          }
+        }
 
         if (!cancelled) {
           setIsInstantLaunch(isInstant);
@@ -234,13 +266,30 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
         const totalRaisedUSD = Number(ethers.formatEther(launchInfo.totalRaisedUSD));
         const raiseMaxUSD = Number(ethers.formatEther(launchInfo.raiseMaxUSD));
         const marketCapUSD = Number(ethers.formatEther(poolInfo.marketCapUSD));
-        const currentPrice = Number(ethers.formatEther(poolInfo.currentPrice));
+        const currentPrice = Number(ethers.formatEther(await sdk.priceOracle.bnbToUSD(poolInfo.currentPrice)));
         const graduationProgress = Number(poolInfo.graduationProgress);
         const priceMultiplier = Number(poolInfo.priceMultiplier);
         const raiseCompleted = Boolean(launchInfo.raiseCompleted);
         const graduated = Boolean(poolInfo.graduated);
         const virtual = pool.virtualBnbReserve;
         const liquidityPool = await sdk.priceOracle.bnbToUSD(BigInt(poolInfo.bnbReserve) + BigInt(virtual));
+        
+        // Parse vesting data if available
+        const startMarketCap = vestingData
+          ? Number(ethers.formatEther(vestingData.startMarketCap))
+          : 0;
+        const vestingDuration = vestingData?.vestingDuration
+          ? Number(vestingData.vestingDuration)
+          : 0;
+        const vestingStartTime = vestingData?.vestingStartTime
+          ? new Date(Number(vestingData.vestingStartTime) * 1000)
+          : null;
+        const founderTokens = vestingData
+          ? Number(ethers.formatEther(vestingData.founderTokens))
+          : 0;
+        const founderTokensClaimed = vestingData
+          ? Number(ethers.formatEther(vestingData.founderTokensClaimed))
+          : 0;
         
         // Parse deadline
         const raiseDeadline = launchInfo.raiseDeadline
@@ -252,36 +301,61 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
         let totalVolumeBNB = 0;
         let recentTradesCount = 0;
         let holderCount = 0;
+        let transactionCount = 0;
+        let priceChange24h = 0;
 
         try {
           // Get 24h volume
           const volume24hData = await sdk.bondingDex.get24hVolume(id);
-          console.log(volume24hData)
-          const volume24hBNB = volume24hData.totalVolumeBNB;
-          const volume24hBNBFormatted = sdk.bondingDex.formatBNBAmount(volume24hBNB);
+          console.log(volume24hData);
+          const volume24hBNB = volume24hData.volumeBNB;
           const vol = await sdk.priceOracle.bnbToUSD(Number(volume24hBNB));
           volume24h = Number(ethers.formatUnits(vol.toString(), 18));
                 
           // Get total volume
           const totalVolumeData = await sdk.bondingDex.getTotalVolume(id);
           totalVolumeBNB = Number(ethers.formatEther(totalVolumeData.totalVolumeBNB));
+          transactionCount = totalVolumeData.buyCount + totalVolumeData.sellCount;
+            console.log(totalVolumeData)
+          // Get 24h price change
+          try {
+            const priceChangeData = await sdk.bondingDex.get24hPriceChange(id);
+            priceChange24h = priceChangeData.priceChangePercent;
+            console.log(`Price change for ${tokenName}: ${priceChange24h}%`);
+          } catch (error) {
+            console.warn(`Could not fetch price change data for ${id}:`, error);
+          }
           
           // Get recent trades and convert to Trade format
           const tradesData = await sdk.bondingDex.getRecentTrades(id);
           recentTradesCount = tradesData.length;
-          
+
           // Convert SDK TradeData format to Trade format
-          const convertedTrades: Trade[] = tradesData.map((tradeData, index) => ({
-            id: `${tradeData.txHash}-${index}`,
-            tokenId: id,
-            type: tradeData.type,
-            amount: Number(ethers.formatEther(tradeData.tokenAmount)),
-            price: Number(ethers.formatEther(tradeData.price)),
-            total: Number(ethers.formatEther(tradeData.bnbAmount)),
-            userAddress: tradeData.trader,
-            timestamp: new Date(tradeData.timestamp * 1000),
-            txHash: tradeData.txHash,
-          }));
+          const convertedTrades: Trade[] = await Promise.all(
+          tradesData.map(async (tradeData: any, index: number) => {
+
+      const usdPrice = await sdk.priceOracle.bnbToUSD(tradeData.price);
+      const usdValue = await sdk.priceOracle.bnbToUSD(tradeData.bnbAmount); // adjust 
+      const priceInBnbHexOrBN = bnbPriceForUsd;
+
+      const amount = Number(ethers.formatEther(tradeData.tokenAmount));
+      const price = Number(ethers.formatEther(priceInBnbHexOrBN));
+      const total = Number(ethers.formatEther(usdValue));
+
+      return {
+        id: `${tradeData.txHash}-${index}`,
+        tokenId: tradeData.tokenId ?? tradeData.id ?? `${tradeData.txHash}-${index}`,
+        type: tradeData.type,
+        amount,
+        price,
+        total,
+        userAddress: tradeData.trader,
+        timestamp: new Date(Number(tradeData.timestamp) * 1000),
+        txHash: tradeData.txHash,
+      } as Trade;
+    })
+  );
+
           
           if (!cancelled) {
             setRecentTrades(convertedTrades);
@@ -295,6 +369,7 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
             totalVolumeBNB,
             recentTradesCount,
             holderCount,
+            priceChange24h,
             volume24hData,
             totalVolumeData,
             convertedTrades
@@ -325,12 +400,12 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
           createdAt: new Date(),
 
           // Financial
-          totalSupply: Number(tokenInfo.totalSupply),
+          totalSupply: Number(ethers.formatEther(tokenInfo.totalSupply)),
           currentPrice,
           marketCap: marketCapUSD,
           liquidityPool,
           volume24h,
-          priceChange24h: 0,
+          priceChange24h,
 
           // Project Raise
           projectRaise: isProjectRaise ? {
@@ -350,9 +425,21 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
             targetAmount: raiseMaxUSD || 0,
             startTime: new Date(Date.now() - 60_000),
             endTime: raiseDeadline,
-            vestingSchedule: { totalAmount: 0, releasedAmount: 0, schedule: [] },
+            vestingSchedule: { 
+              totalAmount: founderTokens, 
+              releasedAmount: founderTokensClaimed, 
+              schedule: [] 
+            },
             approved: true,
             graduationProgress,
+            // Vesting data from SDK
+            vestingData: vestingData ? {
+              startMarketCap,
+              vestingDuration,
+              vestingStartTime,
+              founderTokens,
+              founderTokensClaimed,
+            } : undefined,
           } : undefined,
 
           // Instant Launch
@@ -385,7 +472,7 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
 
           // Stats - Updated with SDK data
           holders: holderCount,
-          transactions: recentTradesCount,
+          transactions: transactionCount,
         } as Token;
 
         setToken(tokenData);
@@ -425,6 +512,12 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
   // Show banner for ALL instant-launch tokens (with or without fee data)
   const showFeesBanner = isInstantLaunch;
   const canClaimFees = showFeesBanner && isCreator && creatorFeeInfo?.canClaim;
+  
+  // Show claimable funds banner for project-raise tokens
+  const showClaimableFunds = !isInstantLaunch && claimableAmounts;
+  const hasClaimableFunds = showClaimableFunds && claimableAmounts && claimableAmounts.claimableFunds > 0;
+  const hasClaimableTokens = showClaimableFunds && claimableAmounts && claimableAmounts.claimableTokens > 0;
+  
   console.log(isCreator)
   // Loading state
   if (loading) {
@@ -547,12 +640,74 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
           </div>
         )}
 
+        {/* Claimable Funds Banner - visible for project-raise tokens */}
+        {showClaimableFunds && isCreator && (
+          <div className="mb-6 border-2 border-primary/40 bg-card/70 pixel-corners p-4">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-accent" />
+                <p className="text-sm text-muted-foreground">Founder Claimable Amounts</p>
+              </div>
+              {claimableAmounts ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="border border-primary/30 p-4 pixel-corners bg-background/50">
+                      <p className="text-xs text-muted-foreground mb-2">Claimable Funds (BNB)</p>
+                      <p className="text-2xl font-black tracking-wide text-primary">
+                        {claimableAmounts.claimableFunds.toFixed(4)} BNB
+                      </p>
+                      {hasClaimableFunds && (
+                        <Button 
+                          className="controller-btn mt-3 w-full" 
+                          onClick={() => {/* wire claim funds action later */}}
+                        >
+                          <Coins className="w-4 h-4 mr-2" />
+                          Claim Funds
+                        </Button>
+                      )}
+                    </div>
+                    <div className="border border-primary/30 p-4 pixel-corners bg-background/50">
+                      <p className="text-xs text-muted-foreground mb-2">Claimable Tokens</p>
+                      <p className="text-2xl font-black tracking-wide text-primary">
+                        {claimableAmounts.claimableTokens.toFixed(2)} {token?.symbol}
+                      </p>
+                      {hasClaimableTokens && (
+                        <Button 
+                          className="controller-btn mt-3 w-full" 
+                          onClick={() => {/* wire claim tokens action later */}}
+                        >
+                          <Coins className="w-4 h-4 mr-2" />
+                          Claim Tokens
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  {!hasClaimableFunds && !hasClaimableTokens && (
+                    <p className="text-xs text-muted-foreground text-center">
+                      No claimable amounts available at this time
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <p className="text-sm">Loading claimable amounts...</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Left Column - Token Info & Chart */}
           <div className="lg:col-span-2 space-y-6">
             <TokenInfo token={token} />
             {token.projectRaise && (
-              <VestingTimeline vestingSchedule={token.projectRaise.vestingSchedule} />
+              <VestingTimeline 
+                vestingSchedule={token.projectRaise.vestingSchedule} 
+                tokenAddress={token.contractAddress}
+                vestingData={token.projectRaise.vestingData}
+              />
             )}
             <TradeHistory trades={recentTrades} />
           </div>

@@ -4,79 +4,342 @@ import { VestingSchedule } from "@/types/token";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle, Circle, Clock, Lock } from "lucide-react";
-import { formatNumber } from "@/lib/utils/format";
+import { CheckCircle, Circle, Clock, Lock, Loader2, TrendingUp, Wallet, Coins } from "lucide-react";
+import { formatNumber, formatCurrency } from "@/lib/utils/format";
 import { format } from "date-fns";
+import { useSafuPadSDK } from "@/lib/safupad-sdk";
+import { useEffect, useState } from "react";
+import { ethers } from "ethers";
 
 interface VestingTimelineProps {
   vestingSchedule: VestingSchedule;
+  tokenAddress: string;
+  vestingData?: {
+    startMarketCap: number;
+    vestingDuration: number;
+    vestingStartTime: Date | null;
+    founderTokens: number;
+    founderTokensClaimed: number;
+  };
 }
 
-export function VestingTimeline({ vestingSchedule }: VestingTimelineProps) {
-  const percentageReleased = (vestingSchedule.releasedAmount / vestingSchedule.totalAmount) * 100;
+export function VestingTimeline({ vestingSchedule, tokenAddress, vestingData }: VestingTimelineProps) {
+  const { sdk } = useSafuPadSDK();
+  const [timeBasedProgress, setTimeBasedProgress] = useState<number>(0);
+  const [remainingTime, setRemainingTime] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+  const [claimableTokens, setClaimableTokens] = useState<number>(0);
+  const [claimableFunds, setClaimableFunds] = useState<number>(0);
+  const [claimingTokens, setClaimingTokens] = useState(false);
+  const [claimingFunds, setClaimingFunds] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchVestingData = async () => {
+      if (!sdk || !tokenAddress) {
+        setLoading(true);
+        return;
+      }
+
+      setLoading(true);
+
+      try {
+        // 1. Get time-based vesting progress (percentage based on time elapsed)
+        const timeProgress = await sdk.launchpad.getTimeBasedVestingProgress(tokenAddress);
+        
+        // 2. Get remaining vesting time in seconds
+        const remainingSeconds = await sdk.launchpad.getRemainingVestingTime(tokenAddress);
+
+        // 3. Get claimable amounts
+        const claimableAmounts = await sdk.launchpad.getClaimableAmounts(tokenAddress);
+        console.log(claimableAmounts.claimableFunds)
+        if (!cancelled) {
+          // Convert BigNumber/string to number if needed
+          setTimeBasedProgress(Number(timeProgress));
+          setRemainingTime(Number(remainingSeconds));
+          setClaimableTokens(Number(ethers.formatEther(claimableAmounts.claimableTokens || 0)));
+          setClaimableFunds(Number(ethers.formatEther(claimableAmounts.claimableFunds || 0)));
+        }
+      } catch (error) {
+        console.error('Error fetching vesting data:', error);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void fetchVestingData();
+
+    // Refresh vesting data every minute
+    const interval = setInterval(fetchVestingData, 60000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [sdk, tokenAddress]);
+
+  const handleClaimTokens = async () => {
+    if (!sdk || claimingTokens) return;
+    
+    setClaimingTokens(true);
+    try {
+      // TODO: Wire up SDK method to claim founder tokens
+      console.log('Claiming founder tokens...');
+      // await sdk.launchpad.claimFounderTokens(tokenAddress);
+    } catch (error) {
+      console.error('Error claiming founder tokens:', error);
+    } finally {
+      setClaimingTokens(false);
+    }
+  };
+
+  const handleClaimFunds = async () => {
+    if (!sdk || claimingFunds) return;
+    
+    setClaimingFunds(true);
+    try {
+      // TODO: Wire up SDK method to claim raised funds
+      console.log('Claiming raised funds...');
+      // await sdk.launchpad.claimRaisedFunds(tokenAddress);
+    } catch (error) {
+      console.error('Error claiming raised funds:', error);
+    } finally {
+      setClaimingFunds(false);
+    }
+  };
+
+  // Calculate display values
+  const percentageReleased = vestingData 
+    ? (vestingData.founderTokensClaimed / vestingData.founderTokens) * 100
+    : (vestingSchedule.releasedAmount / vestingSchedule.totalAmount) * 100;
+  
+  // Format remaining time
+  const formatRemainingTime = (seconds: number): string => {
+    if (seconds <= 0) return "Vesting Complete";
+    
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (days > 0) return `${days}d ${hours}h remaining`;
+    if (hours > 0) return `${hours}h ${minutes}m remaining`;
+    return `${minutes}m remaining`;
+  };
+
+  // Format vesting duration (in seconds to human-readable)
+  const formatVestingDuration = (seconds: number): string => {
+    const days = Math.floor(seconds / 86400);
+    const months = Math.floor(days / 30);
+    if (months > 0) return `${months} Month${months > 1 ? 's' : ''}`;
+    return `${days} Day${days > 1 ? 's' : ''}`;
+  };
 
   return (
-    <Card className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h3 className="text-lg font-bold mb-1">Vesting Schedule</h3>
-          <p className="text-sm text-muted-foreground">
-            {formatNumber(vestingSchedule.releasedAmount)} / {formatNumber(vestingSchedule.totalAmount)} tokens released ({percentageReleased.toFixed(1)}%)
+    <Card className="p-4 sm:p-6 min-w-0 overflow-hidden">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-base sm:text-lg font-bold mb-1 break-words">Vesting Schedule</h3>
+          <p className="text-xs sm:text-sm text-muted-foreground break-words">
+            {vestingData 
+              ? `${formatNumber(vestingData.founderTokensClaimed)} / ${formatNumber(vestingData.founderTokens)} tokens released (${percentageReleased.toFixed(1)}%)`
+              : `${formatNumber(vestingSchedule.releasedAmount)} / ${formatNumber(vestingSchedule.totalAmount)} tokens released (${percentageReleased.toFixed(1)}%)`
+            }
           </p>
         </div>
-        <Badge variant="outline" className="flex items-center gap-1">
-          <Lock className="w-3 h-3" />
-          6 Months
-        </Badge>
+        {vestingData && (
+          <Badge variant="outline" className="flex items-center gap-1 flex-shrink-0">
+            <Lock className="w-3 h-3" />
+            {formatVestingDuration(vestingData.vestingDuration)}
+          </Badge>
+        )}
       </div>
+
+      {/* SDK Vesting Data Display */}
+      {vestingData && (
+        <div className="mb-6 space-y-3">
+          {/* Starting Market Cap */}
+          <div className="p-3 sm:p-4 bg-accent/5 border border-accent/20 rounded-lg">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1 flex-shrink-0">
+                <TrendingUp className="w-3 h-3" />
+                Starting Market Cap
+              </span>
+              <span className="text-base sm:text-lg font-black text-accent break-words">
+                {formatCurrency(vestingData.startMarketCap)}
+              </span>
+            </div>
+          </div>
+
+          {/* Vesting Start Time */}
+          {vestingData.vestingStartTime && (
+            <div className="p-3 sm:p-4 bg-primary/5 border border-primary/20 rounded-lg">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1 flex-shrink-0">
+                  <Clock className="w-3 h-3" />
+                  Vesting Start Time
+                </span>
+                <span className="text-base sm:text-lg font-black text-primary break-words">
+                  {format(vestingData.vestingStartTime, "MMM dd, yyyy HH:mm")}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Founder Tokens */}
+          <div className="p-3 sm:p-4 bg-secondary/5 border border-secondary/20 rounded-lg">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs sm:text-sm text-muted-foreground">Total Founder Tokens</span>
+              <span className="text-base sm:text-lg font-black text-secondary break-all">
+                {formatNumber(vestingData.founderTokens)}
+              </span>
+            </div>
+          </div>
+
+          {/* Founder Tokens Claimed */}
+          <div className="p-3 sm:p-4 bg-primary/5 border border-primary/20 rounded-lg">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <span className="text-xs sm:text-sm text-muted-foreground">Founder Tokens Claimed</span>
+              <span className="text-base sm:text-lg font-black text-primary break-all">
+                {formatNumber(vestingData.founderTokensClaimed)}
+              </span>
+            </div>
+            <div className="w-full bg-muted rounded-full h-2">
+              <div 
+                className="bg-gradient-to-r from-primary to-secondary h-2 rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(percentageReleased, 100)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SDK Vesting Progress Data */}
+      {loading ? (
+        <div className="mb-6 p-4 bg-muted/30 rounded-lg flex items-center justify-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm text-muted-foreground">Loading vesting progress...</span>
+        </div>
+      ) : (
+        <div className="mb-6 space-y-3">
+          {/* Time-Based Progress */}
+          <div className="p-3 sm:p-4 bg-primary/5 border border-primary/20 rounded-lg">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <span className="text-xs sm:text-sm text-muted-foreground">Time-Based Progress</span>
+              <span className="text-base sm:text-lg font-black text-primary">{timeBasedProgress.toFixed(1)}%</span>
+            </div>
+            <div className="w-full bg-muted rounded-full h-2">
+              <div 
+                className="bg-gradient-to-r from-primary to-secondary h-2 rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(timeBasedProgress, 100)}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Remaining Time */}
+          <div className="p-3 sm:p-4 bg-accent/5 border border-accent/20 rounded-lg">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1 flex-shrink-0">
+                <Clock className="w-3 h-3" />
+                Remaining Time
+              </span>
+              <span className="text-base sm:text-lg font-black text-accent break-words">{formatRemainingTime(remainingTime)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Claim Buttons */}
+      {!loading && (claimableFunds > 0 || claimableTokens > 0) && (
+        <div className="mb-6 flex flex-col sm:flex-row gap-3">
+          {claimableFunds > 0 && (
+            <Button 
+              className="controller-btn flex-1" 
+              onClick={handleClaimFunds}
+              disabled={claimingFunds}
+            >
+              {claimingFunds ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Claiming...
+                </>
+              ) : (
+                <>
+                  <Wallet className="w-4 h-4 mr-2" />
+                  Claim Raised Funds ({formatCurrency(claimableFunds)})
+                </>
+              )}
+            </Button>
+          )}
+          {claimableTokens > 0 && (
+            <Button 
+              className="controller-btn flex-1" 
+              onClick={handleClaimTokens}
+              disabled={claimingTokens}
+            >
+              {claimingTokens ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Claiming...
+                </>
+              ) : (
+                <>
+                  <Coins className="w-4 h-4 mr-2" />
+                  Claim Founder Tokens ({formatNumber(claimableTokens)})
+                </>
+              )}
+            </Button>
+          )}
+        </div>
+      )}
 
       <div className="space-y-4">
         {vestingSchedule.schedule.map((milestone, index) => (
           <div
             key={index}
-            className={`flex items-start gap-4 p-4 rounded-lg border ${
+            className={`flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-lg border min-w-0 ${
               milestone.released
                 ? "bg-primary/5 border-primary/20"
                 : "bg-muted/30 border-border"
             }`}
           >
-            <div className="mt-1">
+            <div className="mt-1 flex-shrink-0">
               {milestone.released ? (
-                <CheckCircle className="w-5 h-5 text-primary" />
+                <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
               ) : (
-                <Circle className="w-5 h-5 text-muted-foreground" />
+                <Circle className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground" />
               )}
             </div>
             
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <h4 className="font-semibold">
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <h4 className="font-semibold text-sm sm:text-base break-words">
                   {index === 0 ? "Initial Release" : `Month ${index}`}
                 </h4>
-                <Badge variant={milestone.released ? "default" : "secondary"} className="text-xs">
+                <Badge variant={milestone.released ? "default" : "secondary"} className="text-xs flex-shrink-0">
                   {milestone.released ? "Released" : "Pending"}
                 </Badge>
               </div>
               
-              <div className="flex items-center gap-4 text-sm">
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-xs sm:text-sm">
                 <div className="flex items-center gap-1 text-muted-foreground">
-                  <Clock className="w-3 h-3" />
-                  <span>{format(milestone.date, "MMM dd, yyyy")}</span>
+                  <Clock className="w-3 h-3 flex-shrink-0" />
+                  <span className="break-words">{format(milestone.date, "MMM dd, yyyy")}</span>
                 </div>
-                <div className="font-medium">
+                <div className="font-medium break-all">
                   {formatNumber(milestone.amount)} tokens
                 </div>
               </div>
             </div>
 
             {milestone.released && (
-              <Button variant="outline" size="sm" disabled className="controller-btn-outline">
+              <Button variant="outline" size="sm" disabled className="controller-btn-outline flex-shrink-0 text-xs sm:text-sm">
                 Claimed
               </Button>
             )}
             
             {!milestone.released && new Date() >= milestone.date && (
-              <Button variant="default" size="sm" className="controller-btn">
+              <Button variant="default" size="sm" className="controller-btn flex-shrink-0 text-xs sm:text-sm">
                 Claim
               </Button>
             )}
@@ -85,7 +348,7 @@ export function VestingTimeline({ vestingSchedule }: VestingTimelineProps) {
       </div>
 
       {vestingSchedule.schedule.some(m => !m.released) && (
-        <div className="mt-4 p-4 bg-muted/50 rounded-lg text-sm text-muted-foreground">
+        <div className="mt-4 p-3 sm:p-4 bg-muted/50 rounded-lg text-xs sm:text-sm text-muted-foreground break-words">
           💡 Tokens will be released monthly. You can claim them once they become available.
         </div>
       )}

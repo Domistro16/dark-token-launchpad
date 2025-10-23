@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Slider } from "@/components/ui/slider";
-import { Info } from "lucide-react";
+import { Info, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 
 interface ProjectRaiseModalProps {
   isOpen: boolean;
@@ -27,7 +27,7 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
     name: "",
     symbol: "",
     description: "",
-    targetAmount: "250",
+    targetAmount: "0.3",
     twitter: "",
     telegram: "",
     website: "",
@@ -39,12 +39,80 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  
+  // Image validation state
+  const [imageValidating, setImageValidating] = useState(false);
+  const [imageValid, setImageValid] = useState<boolean | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
 
   // lazy import to avoid tree-shake issues
   const { useSafuPadSDK } = require("@/lib/safupad-sdk");
   const { sdk, isInitializing } = useSafuPadSDK();
 
   const TOTAL_SUPPLY = 1000000000; // 1 billion constant
+
+  // Validate image URL
+  const validateImage = (url: string) => {
+    if (!url.trim()) {
+      setImageValid(null);
+      setImageError(null);
+      return;
+    }
+
+    // Check if URL is valid format
+    try {
+      new URL(url);
+    } catch {
+      setImageValid(false);
+      setImageError("Invalid URL format");
+      return;
+    }
+
+    // Check if URL starts with http/https
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      setImageValid(false);
+      setImageError("URL must start with http:// or https://");
+      return;
+    }
+
+    setImageValidating(true);
+    setImageError(null);
+    setImageValid(null);
+
+    // Create an image element to test if the URL is a valid image
+    const img = new Image();
+    
+    img.onload = () => {
+      setImageValidating(false);
+      setImageValid(true);
+      setImageError(null);
+    };
+    
+    img.onerror = () => {
+      setImageValidating(false);
+      setImageValid(false);
+      setImageError("Unable to load image. Please check the URL.");
+    };
+    
+    // Add timeout for slow loading images
+    const timeout = setTimeout(() => {
+      if (imageValidating) {
+        setImageValidating(false);
+        setImageValid(false);
+        setImageError("Image loading timeout. Please check the URL.");
+      }
+    }, 10000); // 10 second timeout
+    
+    img.src = url;
+    
+    // Cleanup
+    return () => clearTimeout(timeout);
+  };
+
+  const handleImageUrlChange = (url: string) => {
+    setFormData({ ...formData, imageUrl: url });
+    validateImage(url);
+  };
 
   const handleSubmit = async () => {
     setError(null);
@@ -56,9 +124,21 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
       setError("Please fill in all required fields (name, symbol, target amount).");
       return;
     }
+    
+    // Image validation
+    if (formData.imageUrl && imageValid === false) {
+      setError("Please provide a valid image URL or leave it empty.");
+      return;
+    }
+    
+    if (formData.imageUrl && imageValidating) {
+      setError("Please wait for image validation to complete.");
+      return;
+    }
+    
     const targetBNB = Number(formData.targetAmount);
-    if (!Number.isFinite(targetBNB) || targetBNB < 50 || targetBNB > 500) {
-      setError("Target amount must be between 50 BNB and 500 BNB.");
+    if (!Number.isFinite(targetBNB) || targetBNB < 0.1 || targetBNB > 0.5) {
+      setError("Target amount must be between 0.1 BNB and 0.5 BNB.");
       return;
     }
     if (formData.vestingDuration < 3 || formData.vestingDuration > 6) {
@@ -149,7 +229,7 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>
-                Raise window is 24 hours. Target between 50-500 BNB.
+                Raise window is 24 hours. Target between 0.1-0.5 BNB.
               </AlertDescription>
             </Alert>
 
@@ -200,20 +280,53 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
 
             <div className="space-y-2">
               <Label htmlFor="imageUrl">Token Image URL</Label>
-              <Input
-                id="imageUrl"
-                type="url"
-                placeholder="https://example.com/token-image.png"
-                value={formData.imageUrl}
-                onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-                disabled={submitting || isInitializing}
-              />
-              <p className="text-xs text-muted-foreground">
-                Direct link to your token's image (PNG, JPG, GIF)
-              </p>
+              <div className="relative">
+                <Input
+                  id="imageUrl"
+                  type="url"
+                  placeholder="https://example.com/token-image.png"
+                  value={formData.imageUrl}
+                  onChange={(e) => handleImageUrlChange(e.target.value)}
+                  disabled={submitting || isInitializing}
+                  className={
+                    formData.imageUrl && imageValid === false
+                      ? "border-destructive"
+                      : formData.imageUrl && imageValid === true
+                      ? "border-green-500"
+                      : ""
+                  }
+                />
+                {imageValidating && (
+                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
+                )}
+                {!imageValidating && imageValid === true && (
+                  <CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-500" />
+                )}
+                {!imageValidating && imageValid === false && (
+                  <XCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-destructive" />
+                )}
+              </div>
+              {imageError && (
+                <p className="text-xs text-destructive">{imageError}</p>
+              )}
+              {!imageError && (
+                <p className="text-xs text-muted-foreground">
+                  Direct link to your token's image (PNG, JPG, GIF)
+                </p>
+              )}
+              {imageValid === true && formData.imageUrl && (
+                <div className="mt-2 flex items-center gap-2">
+                  <img
+                    src={formData.imageUrl}
+                    alt="Token preview"
+                    className="w-16 h-16 rounded-lg object-cover border border-border"
+                  />
+                  <span className="text-xs text-green-500">Image verified ✓</span>
+                </div>
+              )}
             </div>
 
-            <Button onClick={() => setStep(2)} className="w-full controller-btn" disabled={submitting || isInitializing}>
+            <Button onClick={() => setStep(2)} className="w-full controller-btn" disabled={submitting || isInitializing || imageValidating}>
               Continue to Raise Settings
             </Button>
           </div>
@@ -224,7 +337,7 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>
-                Set your fundraising target between 50 BNB and 500 BNB
+                Set your fundraising target between 0.1 BNB and 0.5 BNB
               </AlertDescription>
             </Alert>
 
@@ -233,22 +346,23 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
               <Input
                 id="targetAmount"
                 type="number"
-                min="50"
-                max="500"
+                min="0.1"
+                max="0.5"
+                step="0.01"
                 value={formData.targetAmount}
                 onChange={(e) => setFormData({ ...formData, targetAmount: e.target.value })}
                 disabled={submitting || isInitializing}
               />
               <Slider
-                value={[parseInt(formData.targetAmount)]}
-                onValueChange={(value) => setFormData({ ...formData, targetAmount: value[0].toString() })}
-                min={50}
-                max={500}
-                step={10}
+                value={[parseFloat(formData.targetAmount)]}
+                onValueChange={(value) => setFormData({ ...formData, targetAmount: value[0].toFixed(2) })}
+                min={0.1}
+                max={0.5}
+                step={0.05}
                 className="mt-2"
               />
               <p className="text-xs text-muted-foreground">
-                {parseInt(formData.targetAmount).toLocaleString()} BNB
+                {parseFloat(formData.targetAmount).toFixed(2)} BNB
               </p>
             </div>
 
@@ -387,7 +501,7 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
               <div className="text-sm space-y-1">
                 <p><strong>Token:</strong> {formData.name} ({formData.symbol})</p>
                 <p><strong>Supply:</strong> {TOTAL_SUPPLY.toLocaleString()}</p>
-                <p><strong>Target:</strong> {parseInt(formData.targetAmount).toLocaleString()} BNB</p>
+                <p><strong>Target:</strong> {parseFloat(formData.targetAmount).toFixed(2)} BNB</p>
                 <p><strong>Vesting Duration:</strong> {formData.vestingDuration} month{formData.vestingDuration !== 1 ? 's' : ''}</p>
                 <p><strong>Burn LP:</strong> {formData.burnLP ? 'Yes' : 'No'}</p>
                 {txHash && (
@@ -410,7 +524,7 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
               <Button variant="outline" onClick={() => setStep(2)} className="w-full controller-btn-outline" disabled={submitting || isInitializing}>
                 Back
               </Button>
-              <Button onClick={handleSubmit} className="w-full controller-btn" disabled={submitting || isInitializing}>
+              <Button onClick={handleSubmit} className="w-full controller-btn" disabled={submitting || isInitializing || (formData.imageUrl && imageValid !== true)}>
                 {submitting ? "Launching..." : "Launch Project Raise"}
               </Button>
             </div>
