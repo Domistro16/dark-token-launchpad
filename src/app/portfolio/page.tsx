@@ -4,26 +4,27 @@ import { Header } from "@/components/Header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { mockTokens, mockClaims } from "@/lib/mockData";
-import { formatCurrency, formatAddress } from "@/lib/utils/format";
-import { formatDistanceToNow } from "date-fns";
-import { Coins, Clock, CheckCircle, TrendingUp, ExternalLink } from "lucide-react";
+import { mockTokens } from "@/lib/mockData";
+import { formatCurrency } from "@/lib/utils/format";
+import { Coins, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
 export default function PortfolioPage() {
   // Mock data - in real app, filter by connected wallet
   const userTokens = mockTokens.filter((t) => t.launchType === "instant-launch" || t.projectRaise?.approved);
-  const userClaims = mockClaims;
 
   const totalPortfolioValue = userTokens.reduce((sum, token) => {
     return sum + (token.marketCap * 0.02); // Mock 2% holdings
   }, 0);
 
-  const claimableAmount = userTokens
-    .filter((t) => t.instantLaunch?.claimableAmount)
-    .reduce((sum, t) => sum + (t.instantLaunch?.claimableAmount || 0), 0);
+  const totalVolume24h = userTokens.reduce((sum, token) => {
+    return sum + token.volume24h;
+  }, 0);
+
+  const averagePriceChange = userTokens.length > 0
+    ? userTokens.reduce((sum, token) => sum + token.priceChange24h, 0) / userTokens.length
+    : 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -33,203 +34,173 @@ export default function PortfolioPage() {
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-2">Portfolio</h1>
           <p className="text-muted-foreground">
-            Manage your tokens, track earnings, and claim rewards
+            Manage your tokens and track your performance
           </p>
         </div>
 
         {/* Portfolio Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card className="p-6">
-            <div className="flex items-center gap-2 mb-2">
-              <Coins className="w-5 h-5 text-primary" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <Card className="p-6 pixel-corners border-2 border-primary/40">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-2 bg-primary/20 rounded-full">
+                <DollarSign className="w-5 h-5 text-primary" />
+              </div>
               <span className="text-sm text-muted-foreground">Total Value</span>
             </div>
-            <p className="text-3xl font-bold">{formatCurrency(totalPortfolioValue)}</p>
-            <p className="text-sm text-green-500 mt-1">+15.3% (24h)</p>
+            <p className="text-3xl font-black tracking-wide mb-1">{formatCurrency(totalPortfolioValue)}</p>
+            <p className="text-sm text-green-500 flex items-center gap-1">
+              <TrendingUp className="w-4 h-4" />
+              +15.3% (24h)
+            </p>
           </Card>
 
-          <Card className="p-6">
-            <div className="flex items-center gap-2 mb-2">
-              <TrendingUp className="w-5 h-5 text-primary" />
+          <Card className="p-6 pixel-corners border-2 border-primary/40">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-2 bg-primary/20 rounded-full">
+                <Coins className="w-5 h-5 text-primary" />
+              </div>
               <span className="text-sm text-muted-foreground">Active Tokens</span>
             </div>
-            <p className="text-3xl font-bold">{userTokens.length}</p>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-3xl font-black tracking-wide mb-1">{userTokens.length}</p>
+            <p className="text-sm text-muted-foreground">
               {userTokens.filter((t) => t.graduated).length} graduated
             </p>
           </Card>
 
-          <Card className="p-6 bg-primary/10 border-primary/20">
-            <div className="flex items-center gap-2 mb-2">
-              <CheckCircle className="w-5 h-5 text-primary" />
-              <span className="text-sm text-muted-foreground">Claimable Fees</span>
+          <Card className="p-6 pixel-corners border-2 border-primary/40">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-2 bg-primary/20 rounded-full">
+                <TrendingUp className="w-5 h-5 text-primary" />
+              </div>
+              <span className="text-sm text-muted-foreground">24h Volume</span>
             </div>
-            <p className="text-3xl font-bold text-primary">{formatCurrency(claimableAmount)}</p>
-            <Button className="mt-3 w-full controller-btn" size="sm">
-              Claim All
-            </Button>
+            <p className="text-3xl font-black tracking-wide mb-1">{formatCurrency(totalVolume24h)}</p>
+            <p className="text-sm text-muted-foreground">
+              Across all tokens
+            </p>
+          </Card>
+
+          <Card className="p-6 pixel-corners border-2 border-primary/40">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-2 bg-primary/20 rounded-full">
+                {averagePriceChange >= 0 ? (
+                  <TrendingUp className="w-5 h-5 text-green-500" />
+                ) : (
+                  <TrendingDown className="w-5 h-5 text-red-500" />
+                )}
+              </div>
+              <span className="text-sm text-muted-foreground">Avg. Change</span>
+            </div>
+            <p className={`text-3xl font-black tracking-wide mb-1 ${averagePriceChange >= 0 ? "text-green-500" : "text-red-500"}`}>
+              {averagePriceChange >= 0 ? "+" : ""}{averagePriceChange.toFixed(2)}%
+            </p>
+            <p className="text-sm text-muted-foreground">
+              24h average
+            </p>
           </Card>
         </div>
 
-        {/* Tabs */}
-        <Tabs defaultValue="tokens" className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="tokens">My Tokens</TabsTrigger>
-            <TabsTrigger value="claims">Claim History</TabsTrigger>
-          </TabsList>
+        {/* My Tokens Section */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold">My Tokens</h2>
+            <Link href="/create">
+              <Button className="controller-btn">
+                <Coins className="w-5 h-5 mr-2" />
+                Create Token
+              </Button>
+            </Link>
+          </div>
 
-          <TabsContent value="tokens" className="space-y-4">
-            {userTokens.map((token) => (
-              <Card key={token.id} className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-start gap-4">
-                    <Image
-                      src={token.image}
-                      alt={token.name}
-                      width={56}
-                      height={56}
-                      className="rounded-full"
-                    />
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-xl font-bold">{token.symbol}</h3>
-                        <Badge variant={token.graduated ? "default" : "outline"}>
-                          {token.graduated ? "Graduated" : "Active"}
-                        </Badge>
-                        <Badge variant="secondary">
-                          {token.launchType === "project-raise" ? "Project Raise" : "Instant Launch"}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground">{token.name}</p>
+          {userTokens.map((token) => (
+            <Card key={token.id} className="p-6 pixel-corners border-2 border-primary/30 hover:border-primary/60 transition-all">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-start gap-4">
+                  <Image
+                    src={token.image}
+                    alt={token.name}
+                    width={64}
+                    height={64}
+                    className="rounded-full border-2 border-primary/40"
+                  />
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-2xl font-black tracking-wide">{token.symbol}</h3>
+                      <Badge variant={token.graduated ? "default" : "outline"} className="font-bold">
+                        {token.graduated ? "Graduated" : "Active"}
+                      </Badge>
+                      <Badge variant="secondary" className="font-bold">
+                        {token.launchType === "project-raise" ? "Project Raise" : "Instant Launch"}
+                      </Badge>
                     </div>
-                  </div>
-
-                  <Link href={`/token/${token.id}`}>
-                    <Button variant="outline" className="controller-btn-outline">View Details</Button>
-                  </Link>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Your Holdings</p>
-                    <p className="text-sm font-bold">50,000 {token.symbol}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatCurrency(token.currentPrice * 50000)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Current Price</p>
-                    <p className="text-sm font-bold">{formatCurrency(token.currentPrice)}</p>
-                    <p className={`text-xs ${token.priceChange24h >= 0 ? "text-green-500" : "text-red-500"}`}>
-                      {token.priceChange24h >= 0 ? "+" : ""}{token.priceChange24h.toFixed(2)}%
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Market Cap</p>
-                    <p className="text-sm font-bold">{formatCurrency(token.marketCap)}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatCurrency(token.volume24h)} Vol
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">P&L</p>
-                    <p className="text-sm font-bold text-green-500">+$234.50</p>
-                    <p className="text-xs text-green-500">+18.2%</p>
+                    <p className="text-sm text-muted-foreground mb-2">{token.name}</p>
+                    <p className="text-xs text-muted-foreground font-mono">{token.contractAddress}</p>
                   </div>
                 </div>
 
-                {/* Instant Launch Claim */}
-                {token.instantLaunch && token.instantLaunch.claimableAmount > 0 && (
-                  <div className="flex items-center justify-between p-4 bg-primary/10 border border-primary/20 rounded-lg">
-                    <div>
-                      <p className="font-semibold mb-1">Creator Fees Available</p>
-                      <p className="text-sm text-muted-foreground">
-                        {formatCurrency(token.instantLaunch.claimableAmount)} ready to claim
-                      </p>
-                      {token.instantLaunch.lastClaimTime && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          <Clock className="w-3 h-3 inline mr-1" />
-                          Last claimed {formatDistanceToNow(token.instantLaunch.lastClaimTime, { addSuffix: true })}
-                        </p>
-                      )}
-                    </div>
-                    <Button className="controller-btn">
-                      Claim {formatCurrency(token.instantLaunch.claimableAmount)}
-                    </Button>
-                  </div>
-                )}
-              </Card>
-            ))}
+                <Link href={`/token/${token.id}`}>
+                  <Button variant="outline" className="controller-btn-outline">View Details</Button>
+                </Link>
+              </div>
 
-            {userTokens.length === 0 && (
-              <Card className="p-12 text-center">
-                <Coins className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-semibold mb-2">No tokens yet</h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Start trading or create your own token
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
+                <div className="p-4 bg-card/50 pixel-corners border border-primary/20">
+                  <p className="text-xs text-muted-foreground mb-2">Your Holdings</p>
+                  <p className="text-lg font-black tracking-wide">50,000 {token.symbol}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {formatCurrency(token.currentPrice * 50000)}
+                  </p>
+                </div>
+                <div className="p-4 bg-card/50 pixel-corners border border-primary/20">
+                  <p className="text-xs text-muted-foreground mb-2">Current Price</p>
+                  <p className="text-lg font-black tracking-wide">{formatCurrency(token.currentPrice)}</p>
+                  <p className={`text-xs mt-1 font-bold ${token.priceChange24h >= 0 ? "text-green-500" : "text-red-500"}`}>
+                    {token.priceChange24h >= 0 ? "+" : ""}{token.priceChange24h.toFixed(2)}%
+                  </p>
+                </div>
+                <div className="p-4 bg-card/50 pixel-corners border border-primary/20">
+                  <p className="text-xs text-muted-foreground mb-2">Market Cap</p>
+                  <p className="text-lg font-black tracking-wide">{formatCurrency(token.marketCap)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {token.holders} holders
+                  </p>
+                </div>
+                <div className="p-4 bg-card/50 pixel-corners border border-primary/20">
+                  <p className="text-xs text-muted-foreground mb-2">24h Volume</p>
+                  <p className="text-lg font-black tracking-wide">{formatCurrency(token.volume24h)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {token.transactions} txns
+                  </p>
+                </div>
+                <div className="p-4 bg-card/50 pixel-corners border border-primary/20">
+                  <p className="text-xs text-muted-foreground mb-2">P&L</p>
+                  <p className="text-lg font-black tracking-wide text-green-500">+$234.50</p>
+                  <p className="text-xs text-green-500 mt-1 font-bold">+18.2%</p>
+                </div>
+              </div>
+            </Card>
+          ))}
+
+          {userTokens.length === 0 && (
+            <Card className="p-12 text-center pixel-corners border-2 border-primary/40">
+              <div className="max-w-md mx-auto">
+                <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Coins className="w-10 h-10 text-primary" />
+                </div>
+                <h3 className="text-xl font-bold mb-3">No tokens yet</h3>
+                <p className="text-sm text-muted-foreground mb-6">
+                  Start trading or create your own token to build your portfolio
                 </p>
                 <Link href="/create">
-                  <Button className="controller-btn">Create Token</Button>
+                  <Button className="controller-btn">
+                    <Coins className="w-5 h-5 mr-2" />
+                    Create Token
+                  </Button>
                 </Link>
-              </Card>
-            )}
-          </TabsContent>
-
-          <TabsContent value="claims" className="space-y-4">
-            {userClaims.map((claim) => {
-              const token = mockTokens.find((t) => t.id === claim.tokenId);
-              return (
-                <Card key={claim.id} className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 bg-primary/10 rounded-full">
-                        <CheckCircle className="w-6 h-6 text-primary" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-bold">{token?.symbol}</h3>
-                          <Badge variant="outline" className="text-xs">
-                            {claim.type === "creator-fee" ? "Creator Fee" : "Vesting Release"}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          Claimed {formatDistanceToNow(claim.timestamp, { addSuffix: true })}
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div className="text-right">
-                      <p className="text-xl font-bold text-primary">
-                        {claim.type === "creator-fee" 
-                          ? formatCurrency(claim.amount)
-                          : `${claim.amount.toLocaleString()} tokens`
-                        }
-                      </p>
-                      <a
-                        href={`https://bscscan.com/tx/${claim.txHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 justify-end mt-1"
-                      >
-                        View on BSCScan <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
-
-            {userClaims.length === 0 && (
-              <Card className="p-12 text-center">
-                <Clock className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-semibold mb-2">No claims yet</h3>
-                <p className="text-sm text-muted-foreground">
-                  Your claim history will appear here
-                </p>
-              </Card>
-            )}
-          </TabsContent>
-        </Tabs>
+              </div>
+            </Card>
+          )}
+        </div>
       </div>
     </div>
   );

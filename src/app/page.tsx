@@ -97,13 +97,16 @@ export default function Home() {
               // Parse numeric values (handle BigNumber if needed)
             // ✅ CORRECT: Convert BigNumbers from wei (18 decimals) to regular numbers
               const totalRaisedUSD = Number(ethers.formatEther(launchInfo.totalRaisedUSD));
-              const raiseMaxUSD = Number(ethers.formatEther(launchInfo.raiseMaxUSD));
+              const raiseMaxUSD = Number(ethers.formatEther(launchInfo.raiseTargetUSD));
               const marketCapUSD = Number(ethers.formatEther(poolInfo.marketCapUSD));
               const currentPrice = Number(ethers.formatEther(await sdk.priceOracle.bnbToUSD(poolInfo.currentPrice)));
               const graduationProgress = Number(poolInfo.graduationProgress);
               const priceMultiplier = Number(poolInfo.priceMultiplier);
               const raiseCompleted = Boolean(launchInfo.raiseCompleted);
               const graduated = Boolean(poolInfo.graduated);
+              
+              // ✅ Parse graduatedToPancakeSwap from launchInfo
+              const graduatedToPancakeSwap = Boolean(launchInfo.graduatedToPancakeSwap);
               
               // Parse vesting data if available
               const startMarketCap = vestingData
@@ -280,6 +283,7 @@ export default function Home() {
 
                 // Graduation
                 graduated,
+                graduatedToPancakeSwap,
                 graduationDate: graduated ? new Date() : undefined,
                 startingMarketCap: startMarketCap,
 
@@ -319,6 +323,7 @@ export default function Home() {
                 volume24h: 0,
                 priceChange24h: 0,
                 graduated: false,
+                graduatedToPancakeSwap: false,
                 holders: 0,
                 transactions: 0,
                 __index: idx,

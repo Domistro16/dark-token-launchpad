@@ -7,12 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowDownUp, TrendingUp, TrendingDown, Loader2, Settings, ChevronDown } from "lucide-react";
+import { ArrowDownUp, TrendingUp, TrendingDown, Loader2, Settings, ChevronDown, Lock } from "lucide-react";
 import { formatCurrency, formatPrice } from "@/lib/utils/format";
 import { useSafuPadSDK } from "@/lib/safupad-sdk";
 import { ethers } from "ethers";
 import { toast } from "sonner";
 import { useBalance, useAccount } from 'wagmi'
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 interface TradingInterfaceProps {
   token: Token;
@@ -52,6 +53,35 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
   const [slippage, setSlippage] = useState("0.5");
   const {address} = useAccount()
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
+  const [graduatedToPancakeSwap, setGraduatedToPancakeSwap] = useState(token.graduatedToPancakeSwap || false);
+
+  // Fetch latest graduation status
+  useEffect(() => {
+    const fetchGraduationStatus = async () => {
+      if (!sdk || !token.graduated) {
+        return;
+      }
+      
+      try {
+        const launchInfo = await sdk.launchpad.getLaunchInfo(token.id);
+        setGraduatedToPancakeSwap(Boolean(launchInfo.graduatedToPancakeSwap));
+      } catch (error) {
+        console.error("Error fetching graduation status:", error);
+      }
+    };
+
+    void fetchGraduationStatus();
+    
+    // Poll every 10 seconds for updates
+    const interval = setInterval(fetchGraduationStatus, 10000);
+    return () => clearInterval(interval);
+  }, [sdk, token.id, token.graduated]);
+
+  // Trading logic:
+  // - Buys disabled when pool has graduated
+  // - Sells only disabled when graduated but NOT yet migrated to PancakeSwap
+  const isBuyDisabled = token.graduated;
+  const isSellDisabled = token.graduated && !graduatedToPancakeSwap;
 
   const provider = new ethers.JsonRpcProvider("https://bnb-testnet.g.alchemy.com/v2/tTuJSEMHVlxyDXueE8Hjv");
   const tokenCon = new ethers.Contract(token.contractAddress, abi, provider);
@@ -106,6 +136,21 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
   }, [sdk, token.contractAddress, address]);
 
   const handleTrade = async () => {
+    // Check if trade is allowed
+    if (tradeType === "buy" && isBuyDisabled) {
+      toast.error("Buying is disabled. This token has graduated to PancakeSwap.");
+      return;
+    }
+
+    if (tradeType === "sell" && isSellDisabled) {
+      if (!token.graduated) {
+        toast.error("Token must graduate before selling is enabled.");
+      } else {
+        toast.error("Selling will be enabled after migration to PancakeSwap completes.");
+      }
+      return;
+    }
+
     if (!amount || parseFloat(amount) <= 0) {
       toast.error("Please enter a valid amount");
       return;
@@ -183,11 +228,25 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
 
   return (
     <Card className="p-6 sticky top-24">
+      {/* Trading Status Alert */}
+      {isBuyDisabled && (
+        <Alert className="mb-4 bg-primary/10 border-primary/30">
+          <Lock className="h-4 w-4" />
+          <AlertDescription className="text-sm">
+            <strong>Buying Disabled</strong> — This token has graduated. 
+            {!isSellDisabled 
+              ? " Only selling is available while migration completes." 
+              : " Trading will resume on PancakeSwap after migration."}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Compact Slippage Settings */}
       <div className="mb-4">
         <button
           onClick={() => setShowSlippageSettings(!showSlippageSettings)}
           className="w-full flex items-center justify-between p-3 bg-card/50 hover:bg-card/70 border-2 border-primary/20 hover:border-primary/40 rounded-lg transition-all group"
+          disabled={isBuyDisabled && isSellDisabled}
         >
           <div className="flex items-center gap-2">
             <Settings className="w-4 h-4 text-primary" />
@@ -208,12 +267,14 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
                 <button
                   key={val}
                   onClick={() => setSlippage(val)}
+                  disabled={isBuyDisabled && isSellDisabled}
                   className={`
                     px-3 py-2 text-xs font-black rounded border-2 transition-all
                     ${slippage === val 
                       ? 'bg-primary text-primary-foreground border-primary shadow-[0_0_12px_rgba(255,176,0,0.5)]' 
                       : 'bg-card/30 text-foreground/70 border-primary/20 hover:border-primary/40 hover:bg-card/50'
                     }
+                    ${(isBuyDisabled && isSellDisabled) ? 'opacity-50 cursor-not-allowed' : ''}
                   `}
                 >
                   {val}%
@@ -231,6 +292,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
                 step="0.1"
                 min="0.1"
                 max="50"
+                disabled={isBuyDisabled && isSellDisabled}
                 className="pr-10 text-center font-mono font-bold bg-background/50 border-primary/30"
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-primary">%</span>
@@ -245,11 +307,11 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
 
       <Tabs value={tradeType} onValueChange={(v) => setTradeType(v as "buy" | "sell")}>
         <TabsList className="grid w-full grid-cols-2 mb-6">
-          <TabsTrigger value="buy" className="data-[state=active]:bg-green-500/20">
+          <TabsTrigger value="buy" className="data-[state=active]:bg-green-500/20" disabled={isBuyDisabled}>
             <TrendingUp className="w-4 h-4 mr-2" />
             Buy
           </TabsTrigger>
-          <TabsTrigger value="sell" className="data-[state=active]:bg-red-500/20">
+          <TabsTrigger value="sell" className="data-[state=active]:bg-red-500/20" disabled={isSellDisabled}>
             <TrendingDown className="w-4 h-4 mr-2" />
             Sell
           </TabsTrigger>
@@ -264,7 +326,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
               placeholder="0.0"
               value={bnbAmount}
               onChange={(e) => handleBnbChange(e.target.value)}
-              disabled={isTrading}
+              disabled={isTrading || isBuyDisabled}
             />
             <p className="text-xs text-muted-foreground">
               Balance: {formatBalance(bnbBalance, loadingBalances)} BNB
@@ -285,7 +347,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
               placeholder="0.0"
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
-              disabled={isTrading}
+              disabled={isTrading || isBuyDisabled}
             />
             <p className="text-xs text-muted-foreground">
               Balance: {formatBalance(tokenBalance, loadingBalances)} {token.symbol}
@@ -313,9 +375,14 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
             onClick={handleTrade} 
             className="w-full controller-btn" 
             size="lg"
-            disabled={isTrading || !bnbAmount || parseFloat(bnbAmount) <= 0}
+            disabled={isTrading || !bnbAmount || parseFloat(bnbAmount) <= 0 || isBuyDisabled}
           >
-            {isTrading ? (
+            {isBuyDisabled ? (
+              <>
+                <Lock className="w-4 h-4 mr-2" />
+                Buying Disabled
+              </>
+            ) : isTrading ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Buying...
@@ -335,7 +402,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
               placeholder="0.0"
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
-              disabled={isTrading}
+              disabled={isTrading || isSellDisabled}
             />
             <p className="text-xs text-muted-foreground">
               Balance: {formatBalance(tokenBalance, loadingBalances)} {token.symbol}
@@ -356,7 +423,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
               placeholder="0.0"
               value={bnbAmount}
               onChange={(e) => handleBnbChange(e.target.value)}
-              disabled={isTrading}
+              disabled={isTrading || isSellDisabled}
             />
             <p className="text-xs text-muted-foreground">
               Balance: {formatBalance(bnbBalance, loadingBalances)} BNB
@@ -385,9 +452,14 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
             className="w-full controller-btn" 
             size="lg" 
             variant="destructive"
-            disabled={isTrading || !amount || parseFloat(amount) <= 0}
+            disabled={isTrading || !amount || parseFloat(amount) <= 0 || isSellDisabled}
           >
-            {isTrading ? (
+            {isSellDisabled ? (
+              <>
+                <Lock className="w-4 h-4 mr-2" />
+                Selling Disabled
+              </>
+            ) : isTrading ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Selling...
@@ -413,7 +485,7 @@ export function TradingInterface({ token }: TradingInterfaceProps) {
                 setBnbAmount(val);
                 setAmount(calculateTokens(val));
               }}
-              disabled={isTrading}
+              disabled={isTrading || isBuyDisabled}
             >
               {val} BNB
             </Button>

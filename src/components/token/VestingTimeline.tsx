@@ -10,6 +10,7 @@ import { format } from "date-fns";
 import { useSafuPadSDK } from "@/lib/safupad-sdk";
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
+import { toast } from "sonner";
 
 interface VestingTimelineProps {
   vestingSchedule: VestingSchedule;
@@ -84,11 +85,17 @@ export function VestingTimeline({ vestingSchedule, tokenAddress, vestingData }: 
     
     setClaimingTokens(true);
     try {
-      // TODO: Wire up SDK method to claim founder tokens
       console.log('Claiming founder tokens...');
-      // await sdk.launchpad.claimFounderTokens(tokenAddress);
-    } catch (error) {
+      await sdk.launchpad.claimFounderToken(tokenAddress);
+      toast.success('Founder tokens claimed successfully!');
+      
+      // Refresh claimable amounts after claiming
+      const claimableAmounts = await sdk.launchpad.getClaimableAmounts(tokenAddress);
+      setClaimableTokens(Number(ethers.formatEther(claimableAmounts.claimableTokens || 0)));
+      setClaimableFunds(Number(ethers.formatEther(claimableAmounts.claimableFunds || 0)));
+    } catch (error: any) {
       console.error('Error claiming founder tokens:', error);
+      toast.error(error?.message || 'Failed to claim founder tokens');
     } finally {
       setClaimingTokens(false);
     }
@@ -99,11 +106,17 @@ export function VestingTimeline({ vestingSchedule, tokenAddress, vestingData }: 
     
     setClaimingFunds(true);
     try {
-      // TODO: Wire up SDK method to claim raised funds
       console.log('Claiming raised funds...');
-      // await sdk.launchpad.claimRaisedFunds(tokenAddress);
-    } catch (error) {
+      await sdk.launchpad.claimRaisedFunds(tokenAddress);
+      toast.success('Raised funds claimed successfully!');
+      
+      // Refresh claimable amounts after claiming
+      const claimableAmounts = await sdk.launchpad.getClaimableAmounts(tokenAddress);
+      setClaimableTokens(Number(ethers.formatEther(claimableAmounts.claimableTokens || 0)));
+      setClaimableFunds(Number(ethers.formatEther(claimableAmounts.claimableFunds || 0)));
+    } catch (error: any) {
       console.error('Error claiming raised funds:', error);
+      toast.error(error?.message || 'Failed to claim raised funds');
     } finally {
       setClaimingFunds(false);
     }
@@ -249,47 +262,66 @@ export function VestingTimeline({ vestingSchedule, tokenAddress, vestingData }: 
         </div>
       )}
 
-      {/* Claim Buttons */}
+      {/* Founder Claimable Amounts Box */}
       {!loading && (claimableFunds > 0 || claimableTokens > 0) && (
-        <div className="mb-6 flex flex-col sm:flex-row gap-3">
-          {claimableFunds > 0 && (
-            <Button 
-              className="controller-btn flex-1" 
-              onClick={handleClaimFunds}
-              disabled={claimingFunds}
-            >
-              {claimingFunds ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Claiming...
-                </>
-              ) : (
-                <>
-                  <Wallet className="w-4 h-4 mr-2" />
-                  Claim Raised Funds ({formatCurrency(claimableFunds)})
-                </>
-              )}
-            </Button>
-          )}
-          {claimableTokens > 0 && (
-            <Button 
-              className="controller-btn flex-1" 
-              onClick={handleClaimTokens}
-              disabled={claimingTokens}
-            >
-              {claimingTokens ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Claiming...
-                </>
-              ) : (
-                <>
-                  <Coins className="w-4 h-4 mr-2" />
-                  Claim Founder Tokens ({formatNumber(claimableTokens)})
-                </>
-              )}
-            </Button>
-          )}
+        <div className="mb-6 p-4 sm:p-5 bg-gradient-to-br from-primary/10 via-accent/10 to-secondary/10 border-2 border-primary/30 rounded-lg pixel-corners">
+          <h4 className="text-sm sm:text-base font-bold mb-4 flex items-center gap-2">
+            <Wallet className="w-4 h-4 text-primary" />
+            Founder Claimable Amounts
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Claimable Funds */}
+            {claimableFunds > 0 && (
+              <div className="p-3 bg-background/60 rounded-lg border border-primary/20">
+                <div className="text-xs text-muted-foreground mb-1">Claimable Funds (BNB)</div>
+                <div className="text-lg sm:text-xl font-black text-primary mb-3">{formatCurrency(claimableFunds)}</div>
+                <Button 
+                  className="controller-btn w-full text-xs sm:text-sm" 
+                  onClick={handleClaimFunds}
+                  disabled={claimingFunds}
+                  size="sm"
+                >
+                  {claimingFunds ? (
+                    <>
+                      <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                      Claiming...
+                    </>
+                  ) : (
+                    <>
+                      <Wallet className="w-3 h-3 mr-2" />
+                      Claim Funds
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+            
+            {/* Claimable Tokens */}
+            {claimableTokens > 0 && (
+              <div className="p-3 bg-background/60 rounded-lg border border-accent/20">
+                <div className="text-xs text-muted-foreground mb-1">Claimable Tokens</div>
+                <div className="text-lg sm:text-xl font-black text-accent mb-3">{formatNumber(claimableTokens)}</div>
+                <Button 
+                  className="controller-btn w-full text-xs sm:text-sm" 
+                  onClick={handleClaimTokens}
+                  disabled={claimingTokens}
+                  size="sm"
+                >
+                  {claimingTokens ? (
+                    <>
+                      <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                      Claiming...
+                    </>
+                  ) : (
+                    <>
+                      <Coins className="w-3 h-3 mr-2" />
+                      Claim Tokens
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

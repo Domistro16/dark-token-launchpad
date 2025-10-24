@@ -18,6 +18,7 @@ import { useSafuPadSDK } from "@/lib/safupad-sdk";
 import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
 import { ethers } from "ethers";
+import { getTokenStats, type PancakeSwapStats } from "@/lib/utils/pancakeswap";
 
 interface TokenCardProps {
   token: Token;
@@ -55,6 +56,8 @@ export function TokenCard({ token, onContribute }: TokenCardProps) {
   const [imageLoading, setImageLoading] = useState(true);
   const [bnbRaised, setBnbRaised] = useState<number>(0);
   const [bnbTarget, setBnbTarget] = useState<number>(0);
+  const [pancakeSwapStats, setPancakeSwapStats] = useState<PancakeSwapStats | null>(null);
+  const [graduatedToPancakeSwap, setGraduatedToPancakeSwap] = useState(false);
   
   const isProjectRaise = token.launchType === "project-raise";
   const isGraduated = token.graduated;
@@ -67,6 +70,39 @@ export function TokenCard({ token, onContribute }: TokenCardProps) {
 
   const shouldShowGradient = !isValidImageUrl || imageError;
   const gradient = generateGradient(token.id + token.symbol);
+
+  // Fetch graduation status
+  useEffect(() => {
+    const fetchGraduationStatus = async () => {
+      if (!sdk || !isGraduated) return;
+      
+      try {
+        const launchInfo = await sdk.launchpad.getLaunchInfo(token.id);
+        setGraduatedToPancakeSwap(Boolean(launchInfo.graduatedToPancakeSwap));
+      } catch (error) {
+        console.error("Error fetching graduation status:", error);
+      }
+    };
+
+    void fetchGraduationStatus();
+  }, [sdk, token.id, isGraduated]);
+
+  // Fetch PancakeSwap stats if graduated
+  useEffect(() => {
+    const fetchPancakeSwapStats = async () => {
+      if (!isGraduated || !graduatedToPancakeSwap) return;
+      
+      try {
+        const provider = new ethers.JsonRpcProvider("https://bnb-testnet.g.alchemy.com/v2/tTuJSEMHVlxyDXueE8Hjv");
+        const stats = await getTokenStats(token.id, provider);
+        setPancakeSwapStats(stats);
+      } catch (error) {
+        console.error("Error fetching PancakeSwap stats:", error);
+      }
+    };
+
+    void fetchPancakeSwapStats();
+  }, [token.id, isGraduated, graduatedToPancakeSwap]);
 
   // Fetch BNB reserve for graduation progress
   useEffect(() => {
@@ -107,6 +143,30 @@ export function TokenCard({ token, onContribute }: TokenCardProps) {
 
     void convertToBnb();
   }, [sdk, isProjectRaise, token.projectRaise]);
+
+  // Use PancakeSwap stats if available, otherwise use token stats
+  const displayPrice = pancakeSwapStats ? pancakeSwapStats.priceInUSD : token.currentPrice;
+  const displayMarketCap = pancakeSwapStats ? pancakeSwapStats.marketCapUSD : token.marketCap;
+  
+  // Handle liquidityPool - it might be a number, BigInt, or bigint string
+  const getDisplayLiquidity = () => {
+    if (pancakeSwapStats) return pancakeSwapStats.liquidityUSD;
+    
+    if (!token.liquidityPool) return 0;
+    
+    // If it's already a number, return it
+    if (typeof token.liquidityPool === 'number') return token.liquidityPool;
+    
+    // If it's a BigInt or string, format it
+    try {
+      return Number(ethers.formatUnits(token.liquidityPool.toString(), 18));
+    } catch (error) {
+      console.error("Error formatting liquidity:", error);
+      return 0;
+    }
+  };
+  
+  const displayLiquidity = getDisplayLiquidity();
 
   // Derive display status per spec
   const displayStatus = (() => {
@@ -203,15 +263,15 @@ export function TokenCard({ token, onContribute }: TokenCardProps) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <p className="text-xs text-muted-foreground mb-1">Price</p>
-              <p className="text-sm font-bold">{formatPrice(token.currentPrice)}</p>
+              <p className="text-sm font-bold">{formatPrice(displayPrice)}</p>
               <p className={`text-xs ${token.priceChange24h >= 0 ? "text-green-500" : "text-red-500"}`}>
                 {formatPercentage(token.priceChange24h)}
               </p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-1">Market Cap</p>
-              <p className="text-sm font-bold">{formatCurrency(token.marketCap)}</p>
-              <p className="text-xs text-muted-foreground">{formatCurrency(token.volume24h)} Vol</p>
+              <p className="text-sm font-bold">{formatCurrency(displayMarketCap)}</p>
+              <p className="text-xs text-muted-foreground">{formatCurrency(displayLiquidity)} Vol</p>
             </div>
           </div>
         )}

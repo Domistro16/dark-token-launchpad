@@ -22,12 +22,15 @@ import {
   Activity,
   Rocket,
   CheckCircle,
+  Loader2,
 } from "lucide-react";
 import Image from "next/image";
 import {ethers} from "ethers";
 import { useSafuPadSDK } from "@/lib/safupad-sdk";
 import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
+import { toast } from "sonner";
+import { getTokenStats, type PancakeSwapStats } from "@/lib/utils/pancakeswap";
 
 interface TokenInfoProps {
   token: Token;
@@ -51,6 +54,10 @@ export function TokenInfo({ token }: TokenInfoProps) {
   const [bnbReserve, setBnbReserve] = useState<number>(0);
   const [imageError, setImageError] = useState(false);
   const [isInvalidUrl, setIsInvalidUrl] = useState(false);
+  const [isGraduating, setIsGraduating] = useState(false);
+  const [graduatedToPancakeSwap, setGraduatedToPancakeSwap] = useState(false);
+  const [loadingGraduationStatus, setLoadingGraduationStatus] = useState(true);
+  const [pancakeSwapStats, setPancakeSwapStats] = useState<PancakeSwapStats | null>(null);
 
   // Check if URL is valid on mount
   useEffect(() => {
@@ -83,12 +90,102 @@ export function TokenInfo({ token }: TokenInfoProps) {
     void fetchPoolInfo();
   }, [sdk, token.id, token.marketCap]);
 
+  // Fetch graduation status from launchpad
+  useEffect(() => {
+    const fetchGraduationStatus = async () => {
+      if (!sdk || !token.graduated) {
+        setLoadingGraduationStatus(false);
+        return;
+      }
+      
+      setLoadingGraduationStatus(true);
+      try {
+        const launchInfo = await sdk.launchpad.getLaunchInfo(token.id);
+        setGraduatedToPancakeSwap(Boolean(launchInfo.graduatedToPancakeSwap));
+      } catch (error) {
+        console.error("Error fetching graduation status:", error);
+        setGraduatedToPancakeSwap(false);
+      } finally {
+        setLoadingGraduationStatus(false);
+      }
+    };
+
+    void fetchGraduationStatus();
+  }, [sdk, token.id, token.graduated]);
+
+  // Fetch PancakeSwap stats if graduated
+  useEffect(() => {
+    const fetchPancakeSwapStats = async () => {
+      if (!token.graduated || !graduatedToPancakeSwap) return;
+      
+      try {
+        const provider = new ethers.JsonRpcProvider("https://bnb-testnet.g.alchemy.com/v2/tTuJSEMHVlxyDXueE8Hjv");
+        const stats = await getTokenStats(token.id, provider);
+        setPancakeSwapStats(stats);
+        console.log("PancakeSwap stats:", stats);
+      } catch (error) {
+        console.error("Error fetching PancakeSwap stats:", error);
+      }
+    };
+
+    void fetchPancakeSwapStats();
+  }, [token.id, token.graduated, graduatedToPancakeSwap]);
+
+  const handleCompleteGraduation = async () => {
+    if (!sdk || !address) {
+      toast.error("Please connect your wallet");
+      return;
+    }
+
+    setIsGraduating(true);
+    try {
+      const signer = await sdk.getSigner();
+      const launchpad = new ethers.Contract(sdk.launchpad.address, ['function graduateToPancakeSwap(address)'], signer)
+      const tx = await launchpad.graduateToPancakeSwap(token.contractAddress);
+      await tx.wait();
+      toast.success("Token graduation completed successfully!");
+      // Refetch graduation status after successful transaction
+      const launchInfo = await sdk.launchpad.getLaunchInfo(token.id);
+      setGraduatedToPancakeSwap(Boolean(launchInfo.graduatedToPancakeSwap));
+    } catch (error) {
+      console.error("Error completing graduation:", error);
+      toast.error("Failed to complete graduation. Please try again.");
+    } finally {
+      setIsGraduating(false);
+    }
+  };
+
   const copyAddress = () => {
     navigator.clipboard.writeText(token.contractAddress);
     alert("Contract address copied!");
   };
 
   const shouldShowGradient = imageError || isInvalidUrl;
+
+  // Show button only when poolInfo.graduated is true but graduatedToPancakeSwap is false
+  const shouldShowGraduationButton = token.graduated && !graduatedToPancakeSwap && !loadingGraduationStatus;
+
+  // Use PancakeSwap stats if available, otherwise use token stats
+  const displayPrice = pancakeSwapStats ? pancakeSwapStats.priceInUSD : token.currentPrice;
+  const displayMarketCap = pancakeSwapStats ? pancakeSwapStats.marketCapUSD : token.marketCap;
+  
+  // Handle liquidityPool safely
+  const getDisplayLiquidity = () => {
+    if (pancakeSwapStats) return pancakeSwapStats.liquidityUSD;
+    
+    if (!token.liquidityPool) return 0;
+    
+    if (typeof token.liquidityPool === 'number') return token.liquidityPool;
+    
+    try {
+      return Number(ethers.formatUnits(token.liquidityPool.toString(), 18));
+    } catch (error) {
+      console.error("Error formatting liquidity:", error);
+      return 0;
+    }
+  };
+  
+  const displayLiquidity = getDisplayLiquidity();
 
   return (
     <div className="space-y-6 min-w-0">
@@ -184,7 +281,7 @@ export function TokenInfo({ token }: TokenInfoProps) {
             <TrendingUp className="w-4 h-4 text-primary flex-shrink-0" />
             <span className="text-xs text-muted-foreground whitespace-nowrap">Price</span>
           </div>
-          <p className="text-lg md:text-xl font-bold truncate">{formatPrice(token.currentPrice)}</p>
+          <p className="text-lg md:text-xl font-bold truncate">{formatPrice(displayPrice)}</p>
           <p className={`text-sm ${token.priceChange24h >= 0 ? "text-green-500" : "text-red-500"} truncate`}>
             {formatPercentage(token.priceChange24h)}
           </p>
@@ -195,16 +292,16 @@ export function TokenInfo({ token }: TokenInfoProps) {
             <Rocket className="w-4 h-4 text-primary flex-shrink-0" />
             <span className="text-xs text-muted-foreground whitespace-nowrap">Market Cap</span>
           </div>
-          <p className="text-lg md:text-xl font-bold truncate">{formatCurrency(token.marketCap)}</p>
+          <p className="text-lg md:text-xl font-bold truncate">{formatCurrency(displayMarketCap)}</p>
           <p className="text-sm text-muted-foreground truncate">
-            {formatCurrency(Number(ethers.formatUnits(token.liquidityPool, 18)))} liquidity
+            {formatCurrency(displayLiquidity)} liquidity
           </p>
         </Card>
 
         <Card className="p-3 md:p-4 overflow-hidden">
           <div className="flex items-center gap-2 mb-2">
             <Activity className="w-4 h-4 text-primary flex-shrink-0" />
-            <span className="text-xs text-muted-foreground whitespace-nowrap">24h Volume</span>
+            <span className="text-xs text-muted-foreground whitespace-nowrap">Volume</span>
           </div>
           <p className="text-lg md:text-xl font-bold truncate">{formatCurrency(token.volume24h)}</p>
           <p className="text-sm text-muted-foreground truncate">{token.transactions} txns</p>
@@ -294,7 +391,7 @@ export function TokenInfo({ token }: TokenInfoProps) {
               </div>
               <Progress
                 value={getProgressPercentage(bnbReserve, 15)}
-                className="h-3"
+                className="h-2"
               />
             </div>
             <div className="p-3 bg-muted/50 rounded-lg text-sm">
@@ -314,12 +411,63 @@ export function TokenInfo({ token }: TokenInfoProps) {
             <h3 className="text-base md:text-lg font-bold">Token Graduated!</h3>
           </div>
           <p className="text-sm text-muted-foreground mb-2 break-words">
-            This token has graduated to PancakeSwap and can be traded on both platforms.
+            {graduatedToPancakeSwap 
+              ? "This token has been migrated to PancakeSwap and can be traded on both platforms."
+              : "This token has graduated and is ready to be migrated to PancakeSwap."}
           </p>
+          {pancakeSwapStats && (
+            <div className="mt-4 p-3 bg-background/50 rounded-lg space-y-2">
+              <p className="text-xs font-bold text-primary mb-2">📊 PancakeSwap Stats</p>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-muted-foreground">Price:</span>
+                  <span className="ml-2 font-medium">{formatPrice(pancakeSwapStats.priceInUSD)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Market Cap:</span>
+                  <span className="ml-2 font-medium">{formatCurrency(pancakeSwapStats.marketCapUSD)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Liquidity:</span>
+                  <span className="ml-2 font-medium">{formatCurrency(pancakeSwapStats.liquidityUSD)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Pair:</span>
+                  <code className="ml-2 text-[10px] font-mono">{formatAddress(pancakeSwapStats.pairAddress)}</code>
+                </div>
+              </div>
+            </div>
+          )}
           {token.graduationDate && (
-            <p className="text-xs text-muted-foreground break-words">
+            <p className="text-xs text-muted-foreground mb-4 break-words">
               Graduated on {token.graduationDate.toLocaleDateString()}
             </p>
+          )}
+          {loadingGraduationStatus && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Checking graduation status...</span>
+            </div>
+          )}
+          {shouldShowGraduationButton && (
+            <Button
+              onClick={handleCompleteGraduation}
+              disabled={isGraduating}
+              className="w-full controller-btn"
+              size="lg"
+            >
+              {isGraduating ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Completing Graduation...
+                </>
+              ) : (
+                <>
+                  <Rocket className="w-4 h-4 mr-2" />
+                  Complete Graduation
+                </>
+              )}
+            </Button>
           )}
         </Card>
       )}

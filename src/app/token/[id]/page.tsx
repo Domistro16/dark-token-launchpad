@@ -15,6 +15,7 @@ import { useSafuPadSDK } from "@/lib/safupad-sdk";
 import type { Token, Trade } from "@/types/token";
 import { ethers } from "ethers";
 import {useAccount} from "wagmi"
+import { toast } from "sonner"
 
 export const abi = [{
       "inputs": [
@@ -145,6 +146,13 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
     claimableTokens: number;
     claimableFunds: number;
   } | null>(null);
+  const [graduatedToPancakeSwap, setGraduatedToPancakeSwap] = useState(false);
+  const [postGraduationFees, setPostGraduationFees] = useState<{
+    totalFeesHarvested: number;
+    canHarvest: boolean;
+    timeRemaining: number;
+  } | null>(null);
+  const [isHarvesting, setIsHarvesting] = useState(false);
 
   // Fetch token data from SDK
   useEffect(() => {
@@ -168,8 +176,16 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
         const logoURI = tokenMeta.logoURI || 
           "https://images.unsplash.com/photo-1614064641938-3bbee52942c1?w=400&h=400&fit=crop";
 
-        // Fetch launch info
+        // Fetch launch info with USD values
         const launchInfo = await sdk.launchpad.getLaunchInfoWithUSD(id);
+        
+        // Fetch graduation status separately using getLaunchInfo
+        const launchInfoBasic = await sdk.launchpad.getLaunchInfo(id);
+        const graduatedToPancake = Boolean(launchInfoBasic.graduatedToPancakeSwap);
+        
+        if (!cancelled) {
+          setGraduatedToPancakeSwap(graduatedToPancake);
+        }
         
         // Fetch pool info
         const poolInfo = await sdk.bondingDex.getPoolInfo(id);
@@ -264,7 +280,7 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
 
         // Parse numeric values
         const totalRaisedUSD = Number(ethers.formatEther(launchInfo.totalRaisedUSD));
-        const raiseMaxUSD = Number(ethers.formatEther(launchInfo.raiseMaxUSD));
+        const raiseMaxUSD = Number(ethers.formatEther(launchInfo.raiseTargetUSD));
         const marketCapUSD = Number(ethers.formatEther(poolInfo.marketCapUSD));
         const currentPrice = Number(ethers.formatEther(await sdk.priceOracle.bnbToUSD(poolInfo.currentPrice)));
         const graduationProgress = Number(poolInfo.graduationProgress);
@@ -305,18 +321,17 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
         let priceChange24h = 0;
 
         try {
-          // Get 24h volume
-          const volume24hData = await sdk.bondingDex.get24hVolume(id);
-          console.log(volume24hData);
-          const volume24hBNB = volume24hData.volumeBNB;
-          const vol = await sdk.priceOracle.bnbToUSD(Number(volume24hBNB));
-          volume24h = Number(ethers.formatUnits(vol.toString(), 18));
-                
           // Get total volume
           const totalVolumeData = await sdk.bondingDex.getTotalVolume(id);
           totalVolumeBNB = Number(ethers.formatEther(totalVolumeData.totalVolumeBNB));
           transactionCount = totalVolumeData.buyCount + totalVolumeData.sellCount;
-            console.log(totalVolumeData)
+          
+          // Convert total volume to USD
+          const totalVolumeUSD = await sdk.priceOracle.bnbToUSD(totalVolumeData.totalVolumeBNB);
+          volume24h = Number(ethers.formatEther(totalVolumeUSD));
+          
+          console.log(totalVolumeData);
+                
           // Get 24h price change
           try {
             const priceChangeData = await sdk.bondingDex.get24hPriceChange(id);
@@ -493,6 +508,119 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
     };
   }, [sdk, id]);
 
+  // Fetch post-graduation fee data when token is graduated to PancakeSwap
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPostGraduationFees = async () => {
+      if (!sdk || !token || !graduatedToPancakeSwap) {
+        return;
+      }
+
+      try {
+        // Fetch lock info for total fees harvested
+        const lockInfo = await sdk.lpHarvester.getLockInfo(id);
+        
+        // Fetch can harvest status
+        const harvestStatus = await sdk.lpHarvester.canHarvest(id);
+        
+        const parsedData = {
+          totalFeesHarvested: Number(ethers.formatEther(lockInfo.totalFeesHarvested)),
+          canHarvest: Boolean(harvestStatus.ready),
+          timeRemaining: Number(harvestStatus.timeRemaining),
+        };
+        
+        if (!cancelled) {
+          setPostGraduationFees(parsedData);
+        }
+        
+        console.log('Post-graduation fees:', parsedData);
+      } catch (err) {
+        console.error('Error fetching post-graduation fees:', err);
+        if (!cancelled) {
+          setPostGraduationFees({
+            totalFeesHarvested: 0,
+            canHarvest: false,
+            timeRemaining: 0,
+          });
+        }
+      }
+    };
+
+    void loadPostGraduationFees();
+
+    // Poll every 30 seconds
+    const interval = setInterval(() => {
+      void loadPostGraduationFees();
+    }, 30000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [sdk, id, token, graduatedToPancakeSwap]);
+
+  // Check graduation status to PancakeSwap
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkGraduationStatus = async () => {
+      if (!sdk || !token) return;
+
+      try {
+        const launchInfo = await sdk.launchpad.getLaunchInfo(id);
+        const graduated = Boolean(launchInfo.graduatedToPancakeSwap);
+        
+        if (!cancelled) {
+          setGraduatedToPancakeSwap(graduated);
+        }
+      } catch (err) {
+        console.error('Error checking graduation status:', err);
+      }
+    };
+
+    void checkGraduationStatus();
+
+    // Poll every 10 seconds
+    const interval = setInterval(() => {
+      void checkGraduationStatus();
+    }, 10000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [sdk, id, token]);
+
+  // Handle harvest fees
+  const handleHarvestFees = async () => {
+    if (!sdk) {
+      toast.error("SDK not initialized");
+      return;
+    }
+
+    setIsHarvesting(true);
+    try {
+      const tx = await sdk.lpHarvester.harvestFees(id);
+      toast.success("Fees harvested successfully!");
+      
+      // Refresh post-graduation fees data
+      const lockInfo = await sdk.lpHarvester.getLockInfo(id);
+      const harvestStatus = await sdk.lpHarvester.canHarvest(id);
+      
+      setPostGraduationFees({
+        totalFeesHarvested: Number(ethers.formatEther(lockInfo.totalFeesHarvested)),
+        canHarvest: Boolean(harvestStatus.ready),
+        timeRemaining: Number(harvestStatus.timeRemaining),
+      });
+    } catch (err: any) {
+      console.error('Error harvesting fees:', err);
+      toast.error(err?.message || "Failed to harvest fees");
+    } finally {
+      setIsHarvesting(false);
+    }
+  };
+
   // Derive current user address from localStorage
   const [currentAddress, setCurrentAddress] = useState<string>(address);
   useEffect(() => {
@@ -509,8 +637,8 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
     return currentAddress.toLowerCase() === token.creatorAddress.toLowerCase();
   }, [currentAddress, token]);
 
-  // Show banner for ALL instant-launch tokens (with or without fee data)
-  const showFeesBanner = isInstantLaunch;
+  // Show banner for BOTH instant-launch AND project-raise tokens
+  const showFeesBanner = true; // Show for all token types
   const canClaimFees = showFeesBanner && isCreator && creatorFeeInfo?.canClaim;
   
   // Show claimable funds banner for project-raise tokens
@@ -518,7 +646,14 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
   const hasClaimableFunds = showClaimableFunds && claimableAmounts && claimableAmounts.claimableFunds > 0;
   const hasClaimableTokens = showClaimableFunds && claimableAmounts && claimableAmounts.claimableTokens > 0;
   
-  console.log(isCreator)
+  console.log('Debug Info:', {
+    isCreator,
+    graduatedToPancakeSwap,
+    hasCreatorFeeInfo: !!creatorFeeInfo,
+    hasPostGraduationFees: !!postGraduationFees,
+    showFeesBanner,
+  });
+  
   // Loading state
   if (loading) {
     return (
@@ -592,24 +727,28 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
                         {formatCurrency(creatorFeeInfo.accumulatedFees)}
                       </p>
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Virtual Liquidity</p>
-                      <p className="text-xl font-black tracking-wide">
-                        {formatCurrency(virtualLiquidityUSD)}
-                      </p>
-                    </div>
+                    {!graduatedToPancakeSwap && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Virtual Liquidity</p>
+                        <p className="text-xl font-black tracking-wide">
+                          {formatCurrency(virtualLiquidityUSD)}
+                        </p>
+                      </div>
+                    )}
                     <div>
                       <p className="text-xs text-muted-foreground">Current Market Cap</p>
                       <p className="text-xl font-black tracking-wide">
                         {formatCurrency(creatorFeeInfo.currentMarketCap)}
                       </p>
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Graduation BNB</p>
-                      <p className="text-xl font-black tracking-wide">
-                        {graduationBnb} BNB
-                      </p>
-                    </div>
+                    {!graduatedToPancakeSwap && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Graduation BNB</p>
+                        <p className="text-xl font-black tracking-wide">
+                          {graduationBnb} BNB
+                        </p>
+                      </div>
+                    )}
                   </div>
                   {creatorFeeInfo.lastClaimTime && (
                     <p className="text-xs text-muted-foreground">
@@ -622,6 +761,55 @@ export default function TokenPage({ params }: { params: Promise<{ id: string }> 
                     <p className="text-xs text-yellow-500">
                       ⏱️ There is a week cooldown time between fee claims
                     </p>
+                  )}
+
+                  {/* Post Graduation Creator Fees Section */}
+                  {graduatedToPancakeSwap && (
+                    <div className="mt-4 pt-4 border-t border-primary/30">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Coins className="w-5 h-5 text-secondary" />
+                        <p className="text-sm font-bold text-secondary">Post Graduation Creator Fees</p>
+                      </div>
+                      {postGraduationFees ? (
+                        <div className="space-y-3">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Total Fees Harvested</p>
+                            <p className="text-xl font-black tracking-wide text-secondary">
+                              {formatCurrency(postGraduationFees.totalFeesHarvested)}
+                            </p>
+                          </div>
+                          {isCreator && postGraduationFees.canHarvest && (
+                            <Button 
+                              className="controller-btn w-full sm:w-auto" 
+                              onClick={handleHarvestFees}
+                              disabled={isHarvesting}
+                            >
+                              {isHarvesting ? (
+                                <>
+                                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                                  Harvesting...
+                                </>
+                              ) : (
+                                <>
+                                  <Wallet className="w-5 h-5 mr-2" />
+                                  Harvest Fees
+                                </>
+                              )}
+                            </Button>
+                          )}
+                          {isCreator && !postGraduationFees.canHarvest && postGraduationFees.timeRemaining > 0 && (
+                            <p className="text-xs text-yellow-500">
+                              ⏱️ Next harvest available in {Math.ceil(postGraduationFees.timeRemaining / 60)} minutes
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <p className="text-sm">Loading post-graduation fee data...</p>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </>
               ) : (

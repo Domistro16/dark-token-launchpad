@@ -172,7 +172,7 @@ export function ProjectRaiseModal({ isOpen, onClose }: ProjectRaiseModalProps) {
         symbol: formData.symbol.trim().toUpperCase(),
         totalSupply: TOTAL_SUPPLY,
         raiseTargetBNB: String(targetBNB), // ✅ Changed from raiseTargetUSD
-        raiseMaxBNB: String(targetBNB),    // ✅ Changed from raiseMaxUSD
+        raiseMaxBNB: '0.5',    // ✅ Changed from raiseMaxUSD
         vestingDuration: formData.vestingDuration * 30,
         metadata,
         burnLP: formData.burnLP,
