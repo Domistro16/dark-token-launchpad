@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { mockTokens } from "@/lib/mockData";
 import { formatCurrency } from "@/lib/utils/format";
-import { Coins, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
+import { Coins, TrendingUp, DollarSign } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -22,10 +22,6 @@ export default function PortfolioPage() {
     return sum + token.volume24h;
   }, 0);
 
-  const averagePriceChange = userTokens.length > 0
-    ? userTokens.reduce((sum, token) => sum + token.priceChange24h, 0) / userTokens.length
-    : 0;
-
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -39,7 +35,7 @@ export default function PortfolioPage() {
         </div>
 
         {/* Portfolio Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           <Card className="p-6 pixel-corners border-2 border-primary/40">
             <div className="flex items-center gap-2 mb-3">
               <div className="p-2 bg-primary/20 rounded-full">
@@ -79,25 +75,6 @@ export default function PortfolioPage() {
               Across all tokens
             </p>
           </Card>
-
-          <Card className="p-6 pixel-corners border-2 border-primary/40">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-2 bg-primary/20 rounded-full">
-                {averagePriceChange >= 0 ? (
-                  <TrendingUp className="w-5 h-5 text-green-500" />
-                ) : (
-                  <TrendingDown className="w-5 h-5 text-red-500" />
-                )}
-              </div>
-              <span className="text-sm text-muted-foreground">Avg. Change</span>
-            </div>
-            <p className={`text-3xl font-black tracking-wide mb-1 ${averagePriceChange >= 0 ? "text-green-500" : "text-red-500"}`}>
-              {averagePriceChange >= 0 ? "+" : ""}{averagePriceChange.toFixed(2)}%
-            </p>
-            <p className="text-sm text-muted-foreground">
-              24h average
-            </p>
-          </Card>
         </div>
 
         {/* My Tokens Section */}
@@ -129,12 +106,8 @@ export default function PortfolioPage() {
                       <Badge variant={token.graduated ? "default" : "outline"} className="font-bold">
                         {token.graduated ? "Graduated" : "Active"}
                       </Badge>
-                      <Badge variant="secondary" className="font-bold">
-                        {token.launchType === "project-raise" ? "Project Raise" : "Instant Launch"}
-                      </Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground mb-2">{token.name}</p>
-                    <p className="text-xs text-muted-foreground font-mono">{token.contractAddress}</p>
+                    <p className="text-sm text-muted-foreground mb-1">{token.name}</p>
                   </div>
                 </div>
 
@@ -143,7 +116,7 @@ export default function PortfolioPage() {
                 </Link>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="p-4 bg-card/50 pixel-corners border border-primary/20">
                   <p className="text-xs text-muted-foreground mb-2">Your Holdings</p>
                   <p className="text-lg font-black tracking-wide">50,000 {token.symbol}</p>
@@ -156,20 +129,6 @@ export default function PortfolioPage() {
                   <p className="text-lg font-black tracking-wide">{formatCurrency(token.currentPrice)}</p>
                   <p className={`text-xs mt-1 font-bold ${token.priceChange24h >= 0 ? "text-green-500" : "text-red-500"}`}>
                     {token.priceChange24h >= 0 ? "+" : ""}{token.priceChange24h.toFixed(2)}%
-                  </p>
-                </div>
-                <div className="p-4 bg-card/50 pixel-corners border border-primary/20">
-                  <p className="text-xs text-muted-foreground mb-2">Market Cap</p>
-                  <p className="text-lg font-black tracking-wide">{formatCurrency(token.marketCap)}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {token.holders} holders
-                  </p>
-                </div>
-                <div className="p-4 bg-card/50 pixel-corners border border-primary/20">
-                  <p className="text-xs text-muted-foreground mb-2">24h Volume</p>
-                  <p className="text-lg font-black tracking-wide">{formatCurrency(token.volume24h)}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {token.transactions} txns
                   </p>
                 </div>
                 <div className="p-4 bg-card/50 pixel-corners border border-primary/20">
